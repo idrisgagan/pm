@@ -1,43 +1,33 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
 
-client = TestClient(app)
-
-
-def test_health() -> None:
+def test_health(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-def test_hello() -> None:
-    response = client.get("/api/hello")
-    assert response.status_code == 200
-    assert response.json() == {"message": "Hello from FastAPI"}
-
-
-def test_unknown_api_route_is_json_404() -> None:
+def test_unknown_api_route_is_json_404(client: TestClient) -> None:
     response = client.get("/api/missing")
     assert response.status_code == 404
     assert response.json() == {"detail": "Not Found"}
 
 
-def test_root_serves_index() -> None:
+def test_root_serves_index(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert "Index page" in response.text
 
 
-def test_serves_build_assets() -> None:
+def test_serves_build_assets(client: TestClient) -> None:
     response = client.get("/_next/static/app.js")
     assert response.status_code == 200
     assert 'console.log("asset")' in response.text
 
 
-def test_unknown_page_serves_404_page() -> None:
+def test_unknown_page_serves_404_page(client: TestClient) -> None:
     response = client.get("/no-such-page")
     assert response.status_code == 404
     assert "Custom 404 page" in response.text
@@ -49,7 +39,7 @@ def test_unknown_page_serves_404_page() -> None:
     "path",
     ["/%2e%2e/secret.txt", "/..%2fsecret.txt", "/_next/%2e%2e/%2e%2e/%2e%2e/secret.txt"],
 )
-def test_paths_outside_static_folder_are_not_served(path: str) -> None:
+def test_paths_outside_static_folder_are_not_served(client: TestClient, path: str) -> None:
     response = client.get(path)
     assert response.status_code == 404
     assert "TOP-SECRET" not in response.text

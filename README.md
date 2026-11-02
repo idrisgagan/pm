@@ -4,7 +4,14 @@ A Kanban board with an AI assistant, running locally in Docker. See `AGENTS.md` 
 
 ## Run
 
-Requires Docker. Put `OPENROUTER_API_KEY=...` in a `.env` file at the repo root for AI features.
+Requires Docker. Create a `.env` file at the repo root with:
+
+```
+OPENROUTER_API_KEY=...      # for AI features
+PM_SESSION_SECRET=...       # any long random string; keeps you signed in across restarts
+```
+
+Sign in with `user` / `password`.
 
 ```bash
 scripts/start-mac.sh      # or start-linux.sh, or start-windows.ps1
@@ -17,6 +24,5 @@ The app runs at http://127.0.0.1:8000.
 
 ```bash
 cd backend && uv run pytest
-cd frontend && npm run test:all             # unit tests, then browser tests against the dev server
-cd frontend && npm run test:e2e:container   # browser tests against the running Docker app
+cd frontend && npm run test:all    # unit tests, then browser tests against the running Docker app
 ```

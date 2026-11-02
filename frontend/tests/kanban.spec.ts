@@ -1,13 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
+import { signInToBoard } from "./helpers";
+
+test.beforeEach(async ({ page }) => {
+  await signInToBoard(page);
+});
 
 test("loads the kanban board", async ({ page }) => {
-  await page.goto("/");
   await expect(page.getByRole("heading", { name: "Kanban Studio" })).toBeVisible();
   await expect(page.locator('[data-testid^="column-"]')).toHaveCount(5);
 });
 
 test("adds a card to a column", async ({ page }) => {
-  await page.goto("/");
   const firstColumn = page.locator('[data-testid^="column-"]').first();
   await firstColumn.getByRole("button", { name: /add a card/i }).click();
   await firstColumn.getByPlaceholder("Card title").fill("Playwright card");
@@ -17,7 +20,6 @@ test("adds a card to a column", async ({ page }) => {
 });
 
 test("moves a card between columns", async ({ page }) => {
-  await page.goto("/");
   const card = page.getByTestId("card-card-1");
   const targetColumn = page.getByTestId("column-col-review");
   const cardBox = await card.boundingBox();
@@ -61,7 +63,6 @@ const keyboardMove = async (
 };
 
 test("links cards to the keyboard instructions", async ({ page }) => {
-  await page.goto("/");
   const describedBy = await page
     .getByTestId("card-card-1")
     .getAttribute("aria-describedby");
@@ -71,7 +72,6 @@ test("links cards to the keyboard instructions", async ({ page }) => {
 });
 
 test("reorders a card with the keyboard", async ({ page }) => {
-  await page.goto("/");
   await keyboardMove(page, "card-2", "ArrowUp", "card-1");
   await expect(
     page.getByTestId("column-col-backlog").locator("article")
@@ -79,7 +79,6 @@ test("reorders a card with the keyboard", async ({ page }) => {
 });
 
 test("moves a card to another column with the keyboard", async ({ page }) => {
-  await page.goto("/");
   await keyboardMove(page, "card-1", "ArrowRight", "card-3");
   await expect(
     page.getByTestId("column-col-discovery").getByTestId("card-card-1")

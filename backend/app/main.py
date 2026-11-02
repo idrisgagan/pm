@@ -3,6 +3,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
+
+from app import auth
 
 # The built frontend. The Docker image sets PM_STATIC_DIR; locally it is
 # frontend/out after `npm run build`.
@@ -15,15 +18,21 @@ STATIC_DIR = Path(
 
 app = FastAPI(title="Project Management MVP")
 
+# Signed, httpOnly session cookie. Lax keeps it off cross-site POSTs.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=auth.session_secret(),
+    session_cookie="pm_session",
+    same_site="lax",
+)
+
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/hello")
-def hello() -> dict[str, str]:
-    return {"message": "Hello from FastAPI"}
+app.include_router(auth.router)
 
 
 # Keep unknown /api paths as JSON 404s instead of falling through to the

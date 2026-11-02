@@ -87,19 +87,22 @@ Success criteria: the Kanban demo loads at `http://127.0.0.1:8000/` from the con
 Goal: on first visit to `/`, users must sign in with `user` / `password` to see the board, and they can sign out.
 
 Following D1:
-- [ ] `POST /api/login`: checks the hardcoded credentials and sets an httpOnly, `SameSite=Lax` session cookie signed with a secret from `.env`. Wrong credentials return 401
-- [ ] `POST /api/logout`: clears the cookie
-- [ ] `GET /api/me`: returns the username, or 401
-- [ ] A FastAPI dependency gives each protected route the current user, or returns 401
-- [ ] Frontend: call `/api/me` on load. Show the login form if 401, otherwise show the board. Add a Sign out button
-- [ ] Login form shows an error for wrong credentials and does not reveal which field was wrong
+- [x] `POST /api/login`: checks the hardcoded credentials and sets an httpOnly, `SameSite=Lax` session cookie (`pm_session`, Starlette `SessionMiddleware`, 14 days) signed with `PM_SESSION_SECRET` from `.env`. Wrong credentials return 401. If the secret is unset, the app logs a warning and uses a random one, so restarts sign everyone out
+- [x] `POST /api/logout`: clears the cookie
+- [x] `GET /api/me`: returns the username, or 401
+- [x] A FastAPI dependency, `current_user`, gives each protected route the current user, or returns 401
+- [x] Frontend: call `/api/me` on load. Show the login form if 401, otherwise show the board. Add a Sign out button
+- [x] Login form shows an error for wrong credentials and does not reveal which field was wrong
+- [x] Removed `/api/hello`, which only served the Part 2 hello page
+- [x] Playwright now runs only against the Docker app, approved 2026-11-01. The dev server has no backend, so sign-in cannot work there. Removed the dev-server config and `test:e2e:container`
 
 Tests:
-- pytest: login success and failure, logout, `/api/me` with and without a cookie, and a protected route returns 401 without a cookie
-- Unit: login form validation and error display
-- E2E: wrong password shows an error; correct login shows the board; a reload keeps you signed in; Sign out returns to the login form
+- [x] pytest (18): login success, cookie flags, `/api/me` with and without a session, 4 kinds of bad credentials, missing field, logout, tampered cookie rejected
+- [x] Unit (9 new): login form success, wrong credentials, server unreachable, both fields required; page shows the form when signed out, the board when signed in, after signing in, after signing out, and after a failed sign-out request
+- [x] E2E (11): login form shows first; wrong password shows the error; reload keeps you signed in; Sign out returns to the login form and stays there after reload; `/api/me` is 401 without a session; the 6 board tests now sign in first. 55 of 55 with `--repeat-each=5 --workers=4`
+- [x] Container: the cookie is sent as `httponly; samesite=lax`. A session ends on restart without `PM_SESSION_SECRET` and survives a restart with it
 
-Success criteria: the board is only reachable after signing in, the session survives a reload, and all tests pass.
+Success criteria: the board is only reachable after signing in, the session survives a reload, and all tests pass. Met.
 
 ## Part 5: Database modeling
 
