@@ -50,6 +50,9 @@ const keyboardMove = async (
   await card.focus();
   await page.keyboard.press("Space");
   await expect(card).toHaveAttribute("aria-pressed", "true");
+  // dnd-kit's KeyboardSensor adds its arrow-key listener in a setTimeout after
+  // pick-up. Waiting one task in the page lets that timer run first.
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
   await page.keyboard.press(key);
   await expect(
     page.getByText(`was moved over droppable area ${overId}`)

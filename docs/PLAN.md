@@ -64,21 +64,23 @@ Success criteria: one command starts the app, and `/` and `/api/hello` respond i
 
 Goal: build the frontend statically and serve it from FastAPI, so the demo Kanban board shows at `/`.
 
-- [ ] Read the static export guide in `frontend/node_modules/next/dist/docs/` before changing config
-- [ ] `next.config.ts`: `output: "export"`. Check that `npm run build` writes `frontend/out/`
-- [ ] Dockerfile gets a frontend build stage on Node 22 or later, for example `node:24-slim` (vitest 5 needs Node 22.12+) *(review)*
-- [ ] Copy `frontend/out/` into the runtime image
-- [ ] Point the existing `StaticFiles(directory=..., html=True)` mount at the built frontend. Keep it after all `/api` routes. No hand-written file route *(review)*
-- [ ] Remove the Part 2 hello page (`backend/app/static/`)
-- [ ] Playwright gets a second config that runs against the container on port 8000. The dev-server config stays for frontend-only work
+- [x] Read the static export guide in `frontend/node_modules/next/dist/docs/` before changing config
+- [x] `next.config.ts`: `output: "export"`. `npm run build` writes `frontend/out/`. Removed the `start` script, which does not work with a static export
+- [x] Dockerfile gets a frontend build stage on `node:24-slim` (vitest 5 needs Node 22.12+) *(review)*
+- [x] Copy only `frontend/out/` into the runtime image. No Node or `node_modules` in it. `backend/tests` is excluded from the image
+- [x] Point the existing `StaticFiles(directory=..., html=True)` mount at the built frontend, set by `PM_STATIC_DIR` (default `frontend/out`). Keep it after all `/api` routes. No hand-written file route *(review)*
+- [x] Unknown `/api/...` paths return a JSON 404 instead of the frontend's HTML 404 page (added in this part)
+- [x] Remove the Part 2 hello page (`backend/app/static/`)
+- [x] Playwright gets a second config, `playwright.container.config.ts` (`npm run test:e2e:container`), that runs against the container on port 8000. The dev-server config stays for frontend-only work
 
 Tests:
-- pytest: `/` returns the built `index.html`, and a static asset under `/_next/` is served
-- pytest: requests for `/../`, `/%2e%2e/` and `/..%2f` paths return 404 and never a file outside the static folder *(review)*
-- Unit: existing Vitest tests still pass
-- E2E: existing Playwright tests pass against the container
+- [x] pytest, against a small fake build in `backend/tests/fixtures/static/`: `/` returns `index.html`, an asset under `/_next/` is served, an unknown page returns the 404 page, an unknown `/api` path returns JSON 404
+- [x] pytest: `/%2e%2e/`, `/..%2f` and `/_next/%2e%2e/...` paths return 404 and never `fixtures/secret.txt`, which sits outside the static folder. The test client resolves a plain `/../` before sending, so the encoded forms are what reach the app. A deliberately naive file route leaked the secret on the same requests, so the tests can catch the bug *(review)*
+- [x] Container: `curl --path-as-is` for `/../../`, `/%2e%2e/`, `/..%2f`, `/_next/../` and `/etc/passwd` paths all return 404 with no file contents
+- [x] Unit: existing Vitest tests still pass
+- [x] E2E: all 6 Playwright tests pass against the container, 60 of 60 with `--repeat-each=10 --workers=4`. One keyboard test was flaky at first: dnd-kit's `KeyboardSensor` adds its arrow-key listener in a `setTimeout` after pick-up, and the test could press the arrow first. The test now waits one task in the page before the arrow key
 
-Success criteria: the Kanban demo loads at `http://127.0.0.1:8000/` from the container, and all tests pass.
+Success criteria: the Kanban demo loads at `http://127.0.0.1:8000/` from the container, and all tests pass. Met.
 
 ## Part 4: Fake user sign-in
 

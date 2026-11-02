@@ -10,7 +10,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Frontend
 
-A single-page Kanban board demo. The board lives in React state in the browser, so there is no backend, no persistence, and no login yet. A page refresh resets the board to the seed data.
+A single-page Kanban board demo. The board lives in React state in the browser, so there is no persistence and no login yet. A page refresh resets the board to the seed data.
+
+`next.config.ts` sets `output: "export"`, so `npm run build` writes plain files to `out/`. In Docker, the FastAPI backend serves them at `/`. Static export does not support server features such as API routes, cookies, rewrites or Server Actions. Talk to the backend's `/api` routes instead.
 
 ## Stack
 
@@ -70,13 +72,16 @@ tests/
 ## Commands
 
 ```bash
-npm run dev          # Dev server on http://localhost:3000
-npm run build        # Production build
-npm run lint         # ESLint
-npm run test:unit    # Vitest
-npm run test:e2e     # Playwright; starts the dev server on 127.0.0.1:3000
-npm run test:all     # Both
+npm run dev                 # Dev server on http://localhost:3000
+npm run build               # Static export to out/
+npm run lint                # ESLint
+npm run test:unit           # Vitest
+npm run test:e2e            # Playwright; starts the dev server on 127.0.0.1:3000
+npm run test:e2e:container  # Playwright against the Docker app on 127.0.0.1:8000; start it first
+npm run test:all            # Unit tests, then Playwright against the dev server
 ```
+
+Keyboard drag tests wait one browser task after picking a card up, because dnd-kit's `KeyboardSensor` adds its arrow-key listener in a `setTimeout`. Keep that wait in any new keyboard test.
 
 ## Tests
 

@@ -17,5 +17,6 @@ The app runs at http://127.0.0.1:8000.
 
 ```bash
 cd backend && uv run pytest
-cd frontend && npm run test:all
+cd frontend && npm run test:all             # unit tests, then browser tests against the dev server
+cd frontend && npm run test:e2e:container   # browser tests against the running Docker app
 ```

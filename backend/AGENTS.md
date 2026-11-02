@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI app that serves the API under `/api` and static files at `/`. It runs in the Docker container described in the root `Dockerfile`.
+FastAPI app that serves the API under `/api` and the built frontend at `/`. It runs in the Docker container described in the root `Dockerfile`.
 
 ## Stack
 
@@ -12,10 +12,11 @@ FastAPI app that serves the API under `/api` and static files at `/`. It runs in
 
 ```
 app/
-  main.py          FastAPI app. API routes first, then the static mount at /.
-  static/          Files served at /. Currently a hello page that calls /api/hello.
+  main.py          FastAPI app. API routes, then an /api catch-all, then the static mount at /.
 tests/
-  test_main.py     Tests for the routes and the static page.
+  conftest.py      Points PM_STATIC_DIR at tests/fixtures/static before the app is imported.
+  fixtures/        A small fake frontend build, plus secret.txt outside it for traversal tests.
+  test_main.py     Tests for the routes and static serving.
 pyproject.toml     Dependencies and pytest settings.
 uv.lock            Locked versions. Commit it with any dependency change.
 ```
@@ -24,9 +25,10 @@ uv.lock            Locked versions. Commit it with any dependency change.
 
 - `GET /api/health`: `{"status": "ok"}`. Used by the Docker health check and the start scripts.
 - `GET /api/hello`: `{"message": "Hello from FastAPI"}`.
-- `/`: static files from `app/static/`, with `index.html` for directories.
+- Any other `/api/...` path: JSON 404, so API callers never get the frontend's HTML 404 page.
+- `/`: the built frontend, served by `StaticFiles(html=True)` from `PM_STATIC_DIR`. The default is `frontend/out`, so run `npm run build` in `frontend/` first when running the backend outside Docker. Unknown pages get `404.html`. Starlette's `StaticFiles` rejects paths that resolve outside the folder.
 
-Add new API routes before the static mount in `main.py`, or the mount will answer first.
+Add new API routes above the `/api` catch-all in `main.py`. A route below it is never reached.
 
 ## Commands
 
@@ -41,7 +43,8 @@ uv add <package>         # Add a dependency (use --dev for test-only ones)
 
 ## In the container
 
-- Code lives at `/app/backend`, and the virtual environment at `/app/.venv`.
+- Code lives at `/app/backend`, and the virtual environment at `/app/.venv`. `backend/tests` is not copied into the image.
+- The built frontend lives at `/app/frontend/out`, set by `PM_STATIC_DIR`. It is built in the Dockerfile's Node stage, and only `out/` is copied across.
 - The app runs as the non-root user `app`.
 - `/app/backend/data` is the `pm-data` Docker volume. Files written there survive container restarts.
 - Environment variables come from the root `.env` file, passed with `--env-file`. The file is never copied into the image.
