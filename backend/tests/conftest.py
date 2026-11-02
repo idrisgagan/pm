@@ -10,7 +10,16 @@ from fastapi.testclient import TestClient
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 os.environ["PM_STATIC_DIR"] = str(FIXTURES_DIR / "static")
 
+from app import db  # noqa: E402
 from app.main import app  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # A fresh database file per test. No test touches backend/data.
+    path = tmp_path / "pm.db"
+    monkeypatch.setattr(db, "DB_PATH", path)
+    return path
 
 
 @pytest.fixture

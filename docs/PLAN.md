@@ -124,31 +124,31 @@ Success criteria: the user has signed off on the schema. Met.
 
 Goal: API routes to read and change the signed-in user's board, with thorough backend unit tests. Create the database if it does not exist.
 
-- [ ] `backend/app/db.py`: create the database and tables at startup if missing, and apply `PRAGMA user_version` migrations
-- [ ] Every connection runs `PRAGMA foreign_keys = ON` before any transaction starts (see `docs/DATABASE.md`). Test that deleting a column deletes its cards
-- [ ] Add `backend/data/` to `.gitignore`, so a database created outside Docker is never committed
-- [ ] Open SQLite with `check_same_thread=False`, because FastAPI may run a sync dependency and its route on different threads *(review)*
-- [ ] `backend/app/board.py`: one module for all board changes (rename column, create, update, move and delete card), used by the API now and by the AI in Part 9 *(review)*
-- [ ] Same-column moves remove the card before computing its new position *(review)*
-- [ ] Every change checks that the column or card belongs to the user's board. Return 404 otherwise
-- [ ] Routes:
+- [x] `backend/app/db.py`: create the database and tables at startup if missing, and apply `PRAGMA user_version` migrations
+- [x] Every connection runs `PRAGMA foreign_keys = ON` before any transaction starts (see `docs/DATABASE.md`). Test that deleting a column deletes its cards
+- [x] Add `backend/data/` to `.gitignore`, so a database created outside Docker is never committed
+- [x] Open SQLite with `check_same_thread=False`, because FastAPI may run a sync dependency and its route on different threads *(review)*
+- [x] Every board read or change runs in one `BEGIN IMMEDIATE` transaction. A plain `BEGIN` failed the parallel test with "database is locked"
+- [x] `backend/app/board.py`: one module for all board changes (rename column, create, update, move and delete card), used by the API now and by the AI in Part 9 *(review)*
+- [x] Same-column moves remove the card before computing its new position *(review)*
+- [x] Every change checks that the column or card belongs to the user's board. Return 404 otherwise
+- [x] Routes, each returning the whole board:
   - `GET /api/board`
   - `PATCH /api/columns/{id}`: rename. Reject empty titles
   - `POST /api/cards`
   - `PATCH /api/cards/{id}`: title, details, column and position
   - `DELETE /api/cards/{id}`
-- [ ] Pydantic models validate request bodies, with length limits on titles and details
+- [x] Pydantic models validate request bodies: titles 1 to 200 characters after trimming spaces, details up to 2,000, positions 0 or more. A position past the end puts the card last
 
 Tests:
-- pytest fixture: each test gets a fresh temporary database through `monkeypatch`. No test touches `backend/data/` *(review)*
-- Seed on first access; `GET /api/board` shape
-- Card moves: up and down within a column, to another column, to an empty column, and positions out of range *(review)*
-- Ownership: a second user cannot read or change the first user's cards or columns
-- Validation: empty or too-long titles return 422
-- Parallel requests: several at once all succeed *(review)*
-- Integration: run the Part 2 to 6 flows against the running container
+- [x] pytest fixture: each test gets a fresh temporary database through `monkeypatch`. No test touches `backend/data/` *(review)*
+- [x] pytest (33 new, 54 total): sign-in required on all five routes; seed on first read and only once; rename; create; edit; moves up and down within a column, to another column, to an empty column, past the end, negative; delete closes the gap; unknown ids; validation limits; the database matches `docs/schema.json`; a failed schema step leaves the old version; cascade delete
+- [x] Ownership: the signed-in user gets 404 on all five ways to touch another user's columns and cards, and the other board is unchanged
+- [x] Parallel requests: 30 card creates, 10 at a time, on a user with no board yet, all succeed *(review)*
+- [x] Each of these breaks fails its test: plain `BEGIN`, `check_same_thread` left on, a same-column move without removing the card first, and a card lookup that ignores the board
+- [x] Integration against the container: 401 without a session, seed board, rename, create, move, 20 parallel creates all 201, no errors in the logs. After a stop and start, the board is identical. Frontend unit (15) and browser (11) tests still pass
 
-Success criteria: all routes work against a real SQLite file, data survives a container restart, and all tests pass.
+Success criteria: all routes work against a real SQLite file, data survives a container restart, and all tests pass. Met.
 
 ## Part 7: Frontend + Backend
 

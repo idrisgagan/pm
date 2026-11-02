@@ -1,6 +1,6 @@
 # Database
 
-SQLite, one file per install. The schema is in `docs/schema.json` (version 1). The backend code for it arrives in Part 6, in `backend/app/db.py`.
+SQLite, one file per install. The schema is in `docs/schema.json` (version 1). The code is in `backend/app/db.py` (connections and schema steps) and `backend/app/board.py` (board reads and changes).
 
 ## Tables
 
@@ -28,14 +28,15 @@ cards    id  column_id  -> columns  title  details  position
 
 ## Seed data
 
-The first time a user's board is read, the backend creates the `users` row if needed, then the board with the same five columns and eight cards as `initialData` in `frontend/src/lib/kanban.ts`. Seeding on first read, not at sign-in, means a signed-in user still gets a board after the database file is deleted.
+The first time a user's board is read, the backend creates the `users` row if needed, then the board with the five columns and eight cards in `SEED` in `backend/app/board.py`. Seeding on first read, not at sign-in, means a signed-in user still gets a board after the database file is deleted.
 
 ## The database file
 
 - The file is `backend/data/pm.db`. In Docker, `backend/data` is the `pm-data` volume, so the data survives container restarts and rebuilds.
 - At startup the backend creates the file and the tables if they are missing.
 - Every connection runs `PRAGMA foreign_keys = ON`. SQLite turns foreign key checks off by default, and the setting does not persist in the file.
-- The pragma must run before any transaction starts, because SQLite ignores it inside one. Python's `sqlite3.connect(..., autocommit=False)` starts a transaction at once, so connect with `autocommit=True`, run the pragma, then set `connection.autocommit = False`.
+- The pragma must run before any transaction starts, because SQLite ignores it inside one. Python's `sqlite3.connect(..., autocommit=False)` starts a transaction at once, so `db.py` connects with `autocommit=True` and starts transactions itself.
+- Every board read or change runs in one `BEGIN IMMEDIATE` transaction (`db.transaction`). It takes the write lock at the start, so a second request waits its turn, for up to 5 seconds (Python's default `timeout`). With a plain `BEGIN`, a request that reads and then writes fails at once with "database is locked" when another request is writing.
 
 ## Schema changes
 

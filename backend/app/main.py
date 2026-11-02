@@ -1,11 +1,14 @@
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import auth
+from app import auth, board, db
 
 # The built frontend. The Docker image sets PM_STATIC_DIR; locally it is
 # frontend/out after `npm run build`.
@@ -16,7 +19,14 @@ STATIC_DIR = Path(
     )
 )
 
-app = FastAPI(title="Project Management MVP")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    db.init()
+    yield
+
+
+app = FastAPI(title="Project Management MVP", lifespan=lifespan)
 
 # Signed, httpOnly session cookie. Lax keeps it off cross-site POSTs.
 app.add_middleware(
@@ -33,6 +43,12 @@ def health() -> dict[str, str]:
 
 
 app.include_router(auth.router)
+app.include_router(board.router)
+
+
+@app.exception_handler(board.NotFound)
+def board_not_found(request: Request, exc: board.NotFound) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
 # Keep unknown /api paths as JSON 404s instead of falling through to the
