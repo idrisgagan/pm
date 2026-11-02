@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -15,14 +15,28 @@ import {
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
-import { createId, initialData, moveCard, type BoardData } from "@/lib/kanban";
+import {
+  ApiError,
+  createCard,
+  deleteCard,
+  getBoard,
+  renameColumn,
+  updateCard,
+  type ApiBoard,
+} from "@/lib/api";
+import { fromApi, moveCard, toApiId, type BoardData } from "@/lib/kanban";
+
+const SAVE_FAILED = "Could not save your change. The board was reloaded.";
+const LOAD_FAILED = "Could not load the board. Reload the page to try again.";
 
 type KanbanBoardProps = {
-  onSignOut?: () => void;
+  // Also called when the session has ended, so the login form shows.
+  onSignOut: () => void;
 };
 
 export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
-  const [board, setBoard] = useState<BoardData>(() => initialData);
+  const [board, setBoard] = useState<BoardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -34,7 +48,43 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
     })
   );
 
-  const cardsById = useMemo(() => board.cards, [board.cards]);
+  const isSignedOut = (error: unknown) => error instanceof ApiError && error.status === 401;
+
+  const load = () =>
+    getBoard().then(
+      (next) => setBoard(fromApi(next)),
+      (error) => (isSignedOut(error) ? onSignOut() : setError(LOAD_FAILED))
+    );
+
+  const loadOnMount = useEffectEvent(load);
+  useEffect(() => {
+    loadOnMount();
+  }, []);
+
+  // Show the change first, then save it. The server's board replaces the
+  // local one, so the screen always ends up matching the database.
+  const save = async (next: BoardData, send: () => Promise<ApiBoard>) => {
+    setBoard(next);
+    try {
+      setBoard(fromApi(await send()));
+      setError(null);
+    } catch (error) {
+      if (isSignedOut(error)) {
+        onSignOut();
+        return;
+      }
+      setError(SAVE_FAILED);
+      await load();
+    }
+  };
+
+  if (!board) {
+    return (
+      <p className="p-12 text-sm text-[var(--gray-text)]" role="status">
+        {error ?? "Loading board..."}
+      </p>
+    );
+  }
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveCardId(event.active.id as string);
@@ -48,57 +98,54 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
       return;
     }
 
-    setBoard((prev) => ({
-      ...prev,
-      columns: moveCard(prev.columns, active.id as string, over.id as string),
-    }));
+    const cardId = active.id as string;
+    const columns = moveCard(board.columns, cardId, over.id as string);
+    const column = columns.find((column) => column.cardIds.includes(cardId));
+    if (columns === board.columns || !column) {
+      return;
+    }
+    save({ ...board, columns }, () =>
+      updateCard(toApiId(cardId), {
+        column_id: toApiId(column.id),
+        position: column.cardIds.indexOf(cardId),
+      })
+    );
   };
 
   const handleRenameColumn = (columnId: string, title: string) => {
-    setBoard((prev) => ({
-      ...prev,
-      columns: prev.columns.map((column) =>
-        column.id === columnId ? { ...column, title } : column
-      ),
-    }));
+    save(
+      {
+        ...board,
+        columns: board.columns.map((column) =>
+          column.id === columnId ? { ...column, title } : column
+        ),
+      },
+      () => renameColumn(toApiId(columnId), title)
+    );
   };
 
+  // A new card needs its id from the server, so it shows once the server replies.
   const handleAddCard = (columnId: string, title: string, details: string) => {
-    const id = createId("card");
-    setBoard((prev) => ({
-      ...prev,
-      cards: {
-        ...prev.cards,
-        [id]: { id, title, details: details || "No details yet." },
-      },
-      columns: prev.columns.map((column) =>
-        column.id === columnId
-          ? { ...column, cardIds: [...column.cardIds, id] }
-          : column
-      ),
-    }));
+    save(board, () => createCard(toApiId(columnId), title, details));
   };
 
   const handleDeleteCard = (columnId: string, cardId: string) => {
-    setBoard((prev) => {
-      return {
-        ...prev,
+    save(
+      {
         cards: Object.fromEntries(
-          Object.entries(prev.cards).filter(([id]) => id !== cardId)
+          Object.entries(board.cards).filter(([id]) => id !== cardId)
         ),
-        columns: prev.columns.map((column) =>
+        columns: board.columns.map((column) =>
           column.id === columnId
-            ? {
-                ...column,
-                cardIds: column.cardIds.filter((id) => id !== cardId),
-              }
+            ? { ...column, cardIds: column.cardIds.filter((id) => id !== cardId) }
             : column
         ),
-      };
-    });
+      },
+      () => deleteCard(toApiId(cardId))
+    );
   };
 
-  const activeCard = activeCardId ? cardsById[activeCardId] : null;
+  const activeCard = activeCardId ? board.cards[activeCardId] : null;
 
   return (
     <div className="relative overflow-hidden">
@@ -121,15 +168,13 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
               </p>
             </div>
             <div className="flex flex-col items-end gap-3">
-              {onSignOut ? (
-                <button
-                  type="button"
-                  onClick={onSignOut}
-                  className="rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--navy-dark)] transition hover:border-[var(--primary-blue)]"
-                >
-                  Sign out
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--navy-dark)] transition hover:border-[var(--primary-blue)]"
+              >
+                Sign out
+              </button>
               <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
                   Focus
@@ -151,6 +196,14 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
               </div>
             ))}
           </div>
+          {error ? (
+            <p
+              role="alert"
+              className="rounded-2xl border border-[var(--accent-yellow)] px-4 py-3 text-sm font-semibold text-[var(--navy-dark)]"
+            >
+              {error}
+            </p>
+          ) : null}
         </header>
 
         <DndContext

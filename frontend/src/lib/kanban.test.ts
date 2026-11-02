@@ -1,4 +1,29 @@
-import { moveCard, type Column } from "@/lib/kanban";
+import { fromApi, moveCard, toApiId, type Column } from "@/lib/kanban";
+
+describe("fromApi", () => {
+  it("tags ids and keeps card order", () => {
+    const board = fromApi({
+      columns: [
+        {
+          id: 3,
+          title: "A",
+          cards: [
+            { id: 3, title: "Second", details: "" },
+            { id: 1, title: "First", details: "x" },
+          ],
+        },
+      ],
+    });
+
+    expect(board.columns).toEqual([{ id: "column-3", title: "A", cardIds: ["card-3", "card-1"] }]);
+    expect(board.cards["card-1"]).toEqual({ id: "card-1", title: "First", details: "x" });
+  });
+
+  it("reads the number back from a tagged id", () => {
+    expect(toApiId("card-12")).toBe(12);
+    expect(toApiId("column-3")).toBe(3);
+  });
+});
 
 describe("moveCard", () => {
   const baseColumns: Column[] = [

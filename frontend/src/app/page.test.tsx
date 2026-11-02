@@ -2,12 +2,14 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Home from "@/app/page";
 
-// Answers each API path with a status, like the backend would.
+// Answers each API path with a status, like the backend would. The board is
+// empty unless a test gives it another status.
 const mockApi = (routes: Record<string, number>) =>
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-    const status = routes[String(input)] ?? 404;
-    const body = status === 200 ? JSON.stringify({ username: "user" }) : null;
-    return new Response(body, { status });
+    const path = String(input);
+    const status = routes[path] ?? (path === "/api/board" ? 200 : 404);
+    const body = path === "/api/board" ? { columns: [] } : { username: "user" };
+    return new Response(status === 200 ? JSON.stringify(body) : null, { status });
   });
 
 describe("Home", () => {
@@ -49,6 +51,13 @@ describe("Home", () => {
 
     expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/logout", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("shows the login form when the board says the session has ended", async () => {
+    mockApi({ "/api/me": 200, "/api/board": 401, "/api/logout": 204 });
+    render(<Home />);
+
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
   });
 
   it("still signs out on screen if the logout request fails", async () => {

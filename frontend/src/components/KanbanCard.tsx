@@ -9,8 +9,15 @@ type KanbanCardProps = {
 };
 
 export const KanbanCard = ({ card, onDelete }: KanbanCardProps) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: card.id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: card.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -18,8 +25,13 @@ export const KanbanCard = ({ card, onDelete }: KanbanCardProps) => {
   };
 
   return (
+    // The card is its own drag handle. Without the activator ref, Space or
+    // Enter on any button inside the card picks the card up instead.
     <article
-      ref={setNodeRef}
+      ref={(node) => {
+        setNodeRef(node);
+        setActivatorNodeRef(node);
+      }}
       style={style}
       className={clsx(
         "rounded-2xl border border-transparent bg-white px-4 py-4 shadow-[0_12px_24px_rgba(3,33,71,0.08)]",
@@ -28,7 +40,7 @@ export const KanbanCard = ({ card, onDelete }: KanbanCardProps) => {
       )}
       {...attributes}
       {...listeners}
-      data-testid={`card-${card.id}`}
+      data-testid={card.id}
     >
       <div className="flex items-start justify-between gap-3">
         <div>

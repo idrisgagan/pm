@@ -4,6 +4,7 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import type { Card, Column } from "@/lib/kanban";
 import { KanbanCard } from "@/components/KanbanCard";
 import { NewCardForm } from "@/components/NewCardForm";
+import { handleEditKeys } from "@/components/editKeys";
 
 type KanbanColumnProps = {
   column: Column;
@@ -29,7 +30,7 @@ export const KanbanColumn = ({
         "flex min-h-[520px] flex-col rounded-3xl border border-[var(--stroke)] bg-[var(--surface-strong)] p-4 shadow-[var(--shadow)] transition",
         isOver && "ring-2 ring-[var(--accent-yellow)]"
       )}
-      data-testid={`column-${column.id}`}
+      data-testid={column.id}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="w-full">
@@ -39,9 +40,22 @@ export const KanbanColumn = ({
               {cards.length} cards
             </span>
           </div>
+          {/* Saves on blur or Enter. The key resets the field when the saved
+              title changes, for example after a reload from the server. */}
           <input
-            value={column.title}
-            onChange={(event) => onRename(column.id, event.target.value)}
+            key={column.title}
+            defaultValue={column.title}
+            maxLength={200}
+            onBlur={(event) => {
+              const input = event.currentTarget;
+              const title = input.value.trim();
+              if (title && title !== column.title) {
+                onRename(column.id, title);
+              } else {
+                input.value = column.title;
+              }
+            }}
+            onKeyDown={(event) => handleEditKeys(event, column.title)}
             className="mt-3 w-full bg-transparent font-display text-lg font-semibold text-[var(--navy-dark)] outline-none"
             aria-label="Column title"
           />

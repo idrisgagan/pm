@@ -29,3 +29,38 @@ export const login = (username: string, password: string) =>
   });
 
 export const logout = () => request<void>("/api/logout", { method: "POST" });
+
+export type ApiCard = { id: number; title: string; details: string };
+export type ApiColumn = { id: number; title: string; cards: ApiCard[] };
+export type ApiBoard = { columns: ApiColumn[] };
+
+// Fields to change on a card. The backend leaves out the ones not sent.
+export type CardChanges = {
+  title?: string;
+  details?: string;
+  column_id?: number;
+  position?: number;
+};
+
+export const getBoard = () => request<ApiBoard>("/api/board");
+
+export const renameColumn = (columnId: number, title: string) =>
+  request<ApiBoard>(`/api/columns/${columnId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+
+export const createCard = (columnId: number, title: string, details: string) =>
+  request<ApiBoard>("/api/cards", {
+    method: "POST",
+    body: JSON.stringify({ column_id: columnId, title, details }),
+  });
+
+export const updateCard = (cardId: number, changes: CardChanges) =>
+  request<ApiBoard>(`/api/cards/${cardId}`, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+
+export const deleteCard = (cardId: number) =>
+  request<ApiBoard>(`/api/cards/${cardId}`, { method: "DELETE" });
