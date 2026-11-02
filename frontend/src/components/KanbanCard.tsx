@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type PointerEvent } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import clsx from "clsx";
@@ -15,7 +15,6 @@ type KanbanCardProps = {
 
 export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
   const [editing, setEditing] = useState<Field | null>(null);
-  // No dragging while editing, so selecting text with the mouse stays in the field.
   const {
     attributes,
     listeners,
@@ -24,7 +23,12 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: card.id, disabled: editing !== null });
+  } = useSortable({ id: card.id });
+
+  // Keeps the pointer from reaching the card's drag listener, so selecting
+  // text with the mouse stays in the field. Disabling the sortable instead
+  // would mark the whole card aria-disabled.
+  const stopDrag = (event: PointerEvent) => event.stopPropagation();
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -56,6 +60,8 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
       )}
       {...attributes}
       {...listeners}
+      // Without a label, the card's name is every label inside it joined up.
+      aria-label={card.title}
       data-testid={card.id}
     >
       <div className="flex items-start justify-between gap-3">
@@ -66,6 +72,7 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
               defaultValue={card.title}
               maxLength={200}
               aria-label="Card title"
+              onPointerDown={stopDrag}
               onBlur={(event) => finishEdit("title", event.currentTarget.value)}
               onKeyDown={(event) => handleEditKeys(event, card.title)}
               className="w-full rounded-lg border border-[var(--primary-blue)] px-2 py-1 font-display text-base font-semibold text-[var(--navy-dark)] outline-none"
@@ -87,6 +94,7 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
               maxLength={2000}
               rows={3}
               aria-label="Card details"
+              onPointerDown={stopDrag}
               onBlur={(event) => finishEdit("details", event.currentTarget.value)}
               onKeyDown={(event) => handleEditKeys(event, card.details)}
               className="mt-2 w-full resize-none rounded-lg border border-[var(--primary-blue)] px-2 py-1 text-sm leading-6 text-[var(--gray-text)] outline-none"
