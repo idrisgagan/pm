@@ -32,23 +32,33 @@ Success criteria: the user has approved this plan and `frontend/AGENTS.md`.
 
 Goal: Docker setup, a FastAPI backend in `backend/`, and start and stop scripts in `scripts/`. Serve a static "hello world" page and one API call, running locally.
 
-- [ ] `backend/pyproject.toml` with FastAPI, Uvicorn, pytest and httpx, managed by `uv`, with `uv.lock` committed
-- [ ] `backend/app/main.py`: `GET /api/health` returns `{"status": "ok"}`, `GET /api/hello` returns a JSON greeting, and `/` serves a static `hello.html`
-- [ ] `Dockerfile` at the repo root: Python 3.12 slim image, dependencies installed with `uv sync --frozen`, runs as a non-root user, `HEALTHCHECK` on `/api/health`
-- [ ] Container binds to `127.0.0.1:8000` only *(review)*
-- [ ] Named Docker volume for `backend/data/`, so data survives restarts *(review)*
-- [ ] `.env` passed with `--env-file`. Never copied into the image
-- [ ] `scripts/start-mac.sh`, `start-linux.sh`, `start-windows.ps1`: build the image, replace any old container, run detached, wait for `/api/health`
-- [ ] `scripts/stop-*`: stop and remove the container, keep the volume
-- [ ] `.dockerignore` excludes `.env`, `node_modules`, `.next`, `out`, `.venv`, `backend/data`
-- [ ] Root `README.md`: how to start, stop and test, in a few lines
-- [ ] Fill in `backend/AGENTS.md` and `scripts/AGENTS.md`
+- [x] `backend/pyproject.toml` with FastAPI and Uvicorn, plus pytest and `httpx2` for tests (Starlette's `TestClient` deprecates `httpx` in favour of `httpx2`), managed by `uv`, with `uv.lock` committed
+- [x] `backend/app/main.py`: `GET /api/health` returns `{"status": "ok"}`, `GET /api/hello` returns a JSON greeting, and `/` serves `app/static/index.html` through a `StaticFiles` mount, the same mechanism Part 3 uses for the frontend. The page calls `/api/hello` and shows the result
+- [x] `Dockerfile` at the repo root: Python 3.14 slim image (changed from 3.12, approved 2026-11-01), `uv` 0.13.6 copied from its official image, dependencies installed with `uv sync --frozen`, runs as a non-root user, `HEALTHCHECK` on `/api/health`
+- [x] Container binds to `127.0.0.1:8000` only *(review)*
+- [x] Named Docker volume `pm-data` at `/app/backend/data`, so data survives restarts *(review)*
+- [x] `.env` passed with `--env-file`. Never copied into the image
+- [x] `scripts/start-mac.sh`, `start-linux.sh`, `start-windows.ps1`: build the image, replace any old container, run detached, wait for `/api/health`
+- [x] `scripts/stop-*`: stop and remove the container, keep the volume
+- [x] `.dockerignore` excludes `.env`, `node_modules`, `.next`, `out`, `.venv`, `backend/data`
+- [x] Root `README.md`: how to start, stop and test, in a few lines
+- [x] Fill in `backend/AGENTS.md` and `scripts/AGENTS.md`
 
 Tests:
-- pytest: `/api/health` and `/api/hello` return the expected JSON, and `/` returns the hello page
-- Manual: the start script brings the container up, `curl http://127.0.0.1:8000/api/health` works, and the stop script brings it down. Repeat on each OS available. Record any OS not tested.
+- [x] pytest: `/api/health` and `/api/hello` return the expected JSON, `/` returns the hello page, and an unknown `/api` path returns 404
+- [x] Manual, on macOS with `/bin/bash` 3.2:
+  - start script with no `.env`: warning shown, app healthy
+  - `/api/health`, `/api/hello` and `/` respond
+  - port bound to `127.0.0.1` only
+  - runs as user `app` on Python 3.14.10
+  - Docker reports `healthy`
+  - the app can write to the volume
+  - the stop script removes the container and keeps the volume
+  - the Linux start script with a dummy `.env` passes its values in, and the file written earlier is still there
+  - in Chromium, the page shows the `/api/hello` message
+- [ ] Windows scripts: not run. No Windows machine was available
 
-Success criteria: one command starts the app, and `/` and `/api/hello` respond in the browser. The backend tests pass.
+Success criteria: one command starts the app, and `/` and `/api/hello` respond in the browser. The backend tests pass. Met on macOS.
 
 ## Part 3: Add in Frontend
 
@@ -58,8 +68,8 @@ Goal: build the frontend statically and serve it from FastAPI, so the demo Kanba
 - [ ] `next.config.ts`: `output: "export"`. Check that `npm run build` writes `frontend/out/`
 - [ ] Dockerfile gets a frontend build stage on Node 22 or later, for example `node:24-slim` (vitest 5 needs Node 22.12+) *(review)*
 - [ ] Copy `frontend/out/` into the runtime image
-- [ ] FastAPI mounts `StaticFiles(directory=..., html=True)` at `/`, after all `/api` routes. No hand-written file route *(review)*
-- [ ] Remove the Part 2 hello page
+- [ ] Point the existing `StaticFiles(directory=..., html=True)` mount at the built frontend. Keep it after all `/api` routes. No hand-written file route *(review)*
+- [ ] Remove the Part 2 hello page (`backend/app/static/`)
 - [ ] Playwright gets a second config that runs against the container on port 8000. The dev-server config stays for frontend-only work
 
 Tests:
