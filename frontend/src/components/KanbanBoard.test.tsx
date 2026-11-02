@@ -69,6 +69,52 @@ describe("KanbanBoard", () => {
     expect(input).toHaveValue("Backlog");
   });
 
+  it("edits a card title and saves on Enter", async () => {
+    const renamed = serverBoard();
+    renamed.columns[0].cards[0].title = "Better title";
+    const fetchMock = mockApi({ "PATCH /api/cards/7": { body: renamed } });
+    const column = await renderBoard();
+
+    await userEvent.click(within(column).getByRole("button", { name: "Edit First card" }));
+    const input = within(column).getByLabelText("Card title");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Better title{Enter}");
+
+    expect(sentRequests(fetchMock, "PATCH")).toEqual([["/api/cards/7", { title: "Better title" }]]);
+    expect(within(column).getByTestId("card-7")).toHaveTextContent("Better title");
+  });
+
+  it("edits details over several lines and saves on blur", async () => {
+    const fetchMock = mockApi();
+    const column = await renderBoard();
+
+    await userEvent.click(within(column).getByRole("button", { name: "Edit details of First card" }));
+    const textarea = within(column).getByLabelText("Card details");
+    await userEvent.clear(textarea);
+    await userEvent.type(textarea, "Line one{Shift>}{Enter}{/Shift}Line two");
+    expect(sentRequests(fetchMock, "PATCH")).toEqual([]);
+    await userEvent.tab();
+
+    expect(sentRequests(fetchMock, "PATCH")).toEqual([
+      ["/api/cards/7", { details: "Line one\nLine two" }],
+    ]);
+  });
+
+  it.each([
+    ["Escape cancels", "Draft{Escape}"],
+    ["an empty title is not saved", "{Enter}"],
+  ])("%s a card title edit", async (_, keys) => {
+    const fetchMock = mockApi();
+    const column = await renderBoard();
+
+    await userEvent.click(within(column).getByRole("button", { name: "Edit First card" }));
+    await userEvent.clear(within(column).getByLabelText("Card title"));
+    await userEvent.keyboard(keys);
+
+    expect(sentRequests(fetchMock, "PATCH")).toEqual([]);
+    expect(within(column).getByTestId("card-7")).toHaveTextContent("First card");
+  });
+
   it("adds a card once the server replies", async () => {
     const withCard = serverBoard();
     withCard.columns[0].cards.push({ id: 8, title: "New card", details: "More" });

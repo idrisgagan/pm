@@ -1,14 +1,21 @@
+import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import clsx from "clsx";
+import { handleEditKeys } from "@/components/editKeys";
 import type { Card } from "@/lib/kanban";
+
+type Field = "title" | "details";
 
 type KanbanCardProps = {
   card: Card;
   onDelete: (cardId: string) => void;
+  onEdit: (cardId: string, changes: Partial<Record<Field, string>>) => void;
 };
 
-export const KanbanCard = ({ card, onDelete }: KanbanCardProps) => {
+export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
+  const [editing, setEditing] = useState<Field | null>(null);
+  // No dragging while editing, so selecting text with the mouse stays in the field.
   const {
     attributes,
     listeners,
@@ -17,11 +24,20 @@ export const KanbanCard = ({ card, onDelete }: KanbanCardProps) => {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: card.id });
+  } = useSortable({ id: card.id, disabled: editing !== null });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+  };
+
+  // Saves on blur. An empty title keeps the old one; details may be empty.
+  const finishEdit = (field: Field, value: string) => {
+    setEditing(null);
+    const text = value.trim();
+    if ((text || field === "details") && text !== card[field]) {
+      onEdit(card.id, { [field]: text });
+    }
   };
 
   return (
@@ -43,13 +59,48 @@ export const KanbanCard = ({ card, onDelete }: KanbanCardProps) => {
       data-testid={card.id}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h4 className="font-display text-base font-semibold text-[var(--navy-dark)]">
-            {card.title}
-          </h4>
-          <p className="mt-2 text-sm leading-6 text-[var(--gray-text)]">
-            {card.details}
-          </p>
+        <div className="min-w-0 flex-1">
+          {editing === "title" ? (
+            <input
+              autoFocus
+              defaultValue={card.title}
+              maxLength={200}
+              aria-label="Card title"
+              onBlur={(event) => finishEdit("title", event.currentTarget.value)}
+              onKeyDown={(event) => handleEditKeys(event, card.title)}
+              className="w-full rounded-lg border border-[var(--primary-blue)] px-2 py-1 font-display text-base font-semibold text-[var(--navy-dark)] outline-none"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing("title")}
+              aria-label={`Edit ${card.title}`}
+              className="w-full cursor-text text-left font-display text-base font-semibold text-[var(--navy-dark)]"
+            >
+              {card.title}
+            </button>
+          )}
+          {editing === "details" ? (
+            <textarea
+              autoFocus
+              defaultValue={card.details}
+              maxLength={2000}
+              rows={3}
+              aria-label="Card details"
+              onBlur={(event) => finishEdit("details", event.currentTarget.value)}
+              onKeyDown={(event) => handleEditKeys(event, card.details)}
+              className="mt-2 w-full resize-none rounded-lg border border-[var(--primary-blue)] px-2 py-1 text-sm leading-6 text-[var(--gray-text)] outline-none"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing("details")}
+              aria-label={`Edit details of ${card.title}`}
+              className="mt-2 w-full cursor-text whitespace-pre-line text-left text-sm leading-6 text-[var(--gray-text)]"
+            >
+              {card.details || "No details yet."}
+            </button>
+          )}
         </div>
         <button
           type="button"

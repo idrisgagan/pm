@@ -145,6 +145,13 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
     );
   };
 
+  const handleEditCard = (cardId: string, changes: { title?: string; details?: string }) => {
+    save(
+      { ...board, cards: { ...board.cards, [cardId]: { ...board.cards[cardId], ...changes } } },
+      () => updateCard(toApiId(cardId), changes)
+    );
+  };
+
   const activeCard = activeCardId ? board.cards[activeCardId] : null;
 
   return (
@@ -222,6 +229,7 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
                 onRename={handleRenameColumn}
                 onAddCard={handleAddCard}
                 onDeleteCard={handleDeleteCard}
+                onEditCard={handleEditCard}
               />
             ))}
           </section>
