@@ -108,23 +108,25 @@ Success criteria: the board is only reachable after signing in, the session surv
 
 Goal: propose a schema for the Kanban, save it as JSON, document the approach in `docs/`, and get sign-off.
 
-- [ ] `docs/schema.json`: tables `users`, `boards`, `columns`, `cards`, with column types, keys and constraints
-- [ ] One board per user (unique `user_id`). Columns and cards ordered by an integer `position`
-- [ ] Seed: on first sign-in, create the user's board with the five demo columns and eight cards
-- [ ] `docs/DATABASE.md`: the tables, how ordering works, how the database file is created, and the plan for later schema changes (version number in `PRAGMA user_version`, with migration steps run at startup)
-- [ ] Foreign keys enforced with `PRAGMA foreign_keys = ON` on every connection *(review)*
-- [ ] User sign-off before Part 6
+- [x] `docs/schema.json`: tables `users`, `boards`, `columns`, `cards`, with column types, keys and constraints
+- [x] One board per user (unique `user_id`). Columns and cards ordered by an integer `position`
+- [x] Seed: the first time a user's board is read, create the user and the board with the five demo columns and eight cards. Seeding on first read, not at sign-in, still works when the database file is deleted while the session cookie is valid
+- [x] `docs/DATABASE.md`: the tables, how ordering works, how the database file is created, and the plan for later schema changes (version number in `PRAGMA user_version`, with migration steps run at startup)
+- [x] Foreign keys enforced with `PRAGMA foreign_keys = ON` on every connection *(review)*. Documented here; `db.py` does it in Part 6
+- [x] User sign-off before Part 6. Signed off with three choices: no password column until real accounts, seed on first board read, and number ids (the frontend tags them `column-3` and `card-3` for drag and drop in Part 7)
 
 Tests:
-- pytest: `docs/schema.json` parses and lists the four tables with their required columns
+- [x] pytest (3): `docs/schema.json` lists the four tables with their required columns, every foreign key points at an existing column, and `boards.user_id` is unique
 
-Success criteria: the user has signed off on the schema.
+Success criteria: the user has signed off on the schema. Met.
 
 ## Part 6: Backend API
 
 Goal: API routes to read and change the signed-in user's board, with thorough backend unit tests. Create the database if it does not exist.
 
 - [ ] `backend/app/db.py`: create the database and tables at startup if missing, and apply `PRAGMA user_version` migrations
+- [ ] Every connection runs `PRAGMA foreign_keys = ON` before any transaction starts (see `docs/DATABASE.md`). Test that deleting a column deletes its cards
+- [ ] Add `backend/data/` to `.gitignore`, so a database created outside Docker is never committed
 - [ ] Open SQLite with `check_same_thread=False`, because FastAPI may run a sync dependency and its route on different threads *(review)*
 - [ ] `backend/app/board.py`: one module for all board changes (rename column, create, update, move and delete card), used by the API now and by the AI in Part 9 *(review)*
 - [ ] Same-column moves remove the card before computing its new position *(review)*

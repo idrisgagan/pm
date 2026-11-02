@@ -21,6 +21,7 @@ tests/
   fixtures/        A small fake frontend build, plus secret.txt outside it for traversal tests.
   test_auth.py     Sign-in, sign-out, session and cookie tests.
   test_main.py     Tests for health, the /api catch-all and static serving.
+  test_schema.py   Checks docs/schema.json (see docs/DATABASE.md).
 pyproject.toml     Dependencies and pytest settings.
 uv.lock            Locked versions. Commit it with any dependency change.
 ```
