@@ -143,7 +143,7 @@ Each item below was reproduced in the previous build. Build them right the first
 | 2 | Add `KeyboardSensor` with `sortableKeyboardCoordinates`, and a fixed `DndContext` id | M2, M4 | Done |
 | 3 | Upgrade `vitest` and `@vitest/coverage-v8` to 5. Accept the `minimatch` advisory until upstream fixes it | M3 | Done |
 | 4 | Ignore `test-results/` and `coverage/`. Set `coverage.include` | L2 | Open |
-| 5 | Small cleanups | L5 | Open |
+| 5 | Small cleanups | L5 | Done in Part 7 |
 | 6 | Start Part 1 of `docs/PLAN.md`. Use the rebuild checklist when writing the detailed plan | Plan status, checklist | Open |
 
 L3 and L4 can wait until Part 7, when the frontend starts calling the backend.

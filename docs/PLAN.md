@@ -154,20 +154,29 @@ Success criteria: all routes work against a real SQLite file, data survives a co
 
 Goal: the frontend uses the backend API, so the board persists.
 
-- [ ] `src/lib/api.ts`: typed client for the Part 6 routes. Send cookies, and treat 401 as signed out
-- [ ] Load the board from `GET /api/board` after sign-in. Show a loading state only on first load *(review)*
-- [ ] Apply changes to the screen first, then call the API. On error, reload the board and show a short message
-- [ ] Column rename saves on blur or Enter, and ignores empty titles *(review)*
-- [ ] Card editing, following D4
-- [ ] Do not call the API from inside a React state updater function *(review)*
-- [ ] Update `frontend/AGENTS.md`
+Browser tests run in a throwaway container on port 8001, approved 2026-11-02. Once the board saves, tests against port 8000 would wipe the user's board, and parallel tests would fight over the one board.
+
+- [x] `src/lib/api.ts`: typed client for the Part 6 routes. Cookies go with same-origin requests by default. A 401 from a board call shows the login form
+- [x] Load the board from `GET /api/board` after sign-in. Show a loading state only on first load *(review)*
+- [x] Apply changes to the screen first, then call the API. The server's board then replaces the local one. On error, reload the board and show a short message. Exception: a new card shows once the server replies, because it needs its id from the server
+- [x] Backend ids become `column-3` and `card-3` in the frontend (`fromApi`, `toApiId` in `src/lib/kanban.ts`). Removed the frontend seed data and `createId`
+- [x] Column rename saves on blur or Enter, and ignores empty or unchanged titles *(review)*
+- [x] Card editing, following D4: click the title or details. Enter or blur saves, Escape cancels, Shift+Enter adds a line in details, and an empty title keeps the old one
+- [x] Do not call the API from inside a React state updater function *(review)*
+- [x] Cards set themselves as the dnd-kit activator node. Before this, Space on the Remove button picked the card up. Edit fields stop pointer events from reaching the drag listener. Disabling the sortable instead set `aria-disabled` on the whole card
+- [x] Cards get `aria-label` set to their title. Without it, the card's name was every label inside it joined up
+- [x] Review L5: removed the unused `useMemo`, and test ids no longer repeat the prefix (`card-3`, not `card-card-3`)
+- [x] Playwright builds the image and starts container `pm-app-e2e` on `127.0.0.1:8001` with no volume, so each run starts from an empty database. Tests run one at a time, and each resets the board through the API first
+- [x] Update `frontend/AGENTS.md`
 
 Tests:
-- Unit: API client error handling; rename saves once on blur; card edit
-- E2E (container): add, edit, move (between columns and within one) and delete a card, rename a column, then reload and check every change is still there
-- E2E: a failed API call shows the message and the board matches the server
+- [x] Unit (31, up from 15): API client sends JSON and throws `ApiError` with the status; the board loads from the server; rename saves once on blur and skips empty titles; card title saves on Enter; details save on blur with Shift+Enter lines; Escape and an empty title do not save; add, remove; a failed save shows the message and reloads; a 401 signs out
+- [x] E2E (15): add, edit, delete, rename, mouse move between columns, keyboard reorder and keyboard move, each checked again after a reload. A failed save (PATCH forced to 500 with `page.route`) shows the message and the board matches the server. 15 of 15 against the container, and 75 of 75 with `--repeat-each=5` against the backend run with `uv`
+- [x] Tests catch the bugs: saving each keystroke, Escape not restoring the value, a drag that does not send its position, and a failed save that does not reload each fail a test
+- [x] Container restart: rename, create, edit, two moves and a delete through the API on a container with its own volume, then stop and start. The board was identical. The app on port 8000 was not touched
+- [x] Playwright's stop signal (SIGTERM) stops the test container, and `--rm` removes it
 
-Success criteria: every change survives a page reload and a container restart, and all tests pass.
+Success criteria: every change survives a page reload and a container restart, and all tests pass. Met.
 
 ## Part 8: AI connectivity
 
