@@ -23,6 +23,6 @@ The app runs at http://127.0.0.1:8000.
 ## Test
 
 ```bash
-cd backend && uv run pytest
+cd backend && uv run pytest        # add --env-file ../.env after "run" to include the live AI test
 cd frontend && npm run test:all    # unit tests, then browser tests in a throwaway container on port 8001
 ```

@@ -182,16 +182,24 @@ Success criteria: every change survives a page reload and a container restart, a
 
 Goal: the backend can call the AI through OpenRouter. Check it with a "2+2" test.
 
-- [ ] Read `OPENROUTER_API_KEY` from the environment. A missing key gives a clear error at call time, not at startup
-- [ ] `backend/app/ai.py`: client for OpenRouter with model `openai/gpt-oss-120b`, following D3, with a timeout
-- [ ] Temporary `POST /api/ai/ping` (signed-in only) that sends "What is 2+2?" and returns the answer
-- [ ] Check whether OpenRouter's providers for this model support JSON-schema structured output. Record the result in this plan, because Part 9 depends on it
+- [x] Read `OPENROUTER_API_KEY` from the environment. A missing key gives a clear error at call time, not at startup. It returns 503 "AI is not configured: OPENROUTER_API_KEY is not set.", so it reads differently from an OpenRouter failure
+- [x] `backend/app/ai.py`: client for OpenRouter with model `openai/gpt-oss-120b`, following D3 (`openai` 3.42.1, which uses `httpx2`), with a 30 second timeout. SDK retries are off, so a failing call gives up within the timeout
+- [x] Temporary `POST /api/ai/ping` (signed-in only) that sends "What is 2+2?" and returns the answer
+- [x] Check whether OpenRouter's providers for this model support JSON-schema structured output. Record the result in this plan, because Part 9 depends on it
+
+Structured output result (2026-11-03):
+- OpenRouter's endpoint list for `openai/gpt-oss-120b` (`/api/v1/models/openai/gpt-oss-120b/endpoints`) has 27 provider endpoints. 20 list `structured_outputs` in their supported parameters. This is OpenRouter's own listing.
+- Live: 25 requests with a `json_schema` response format (`strict: true`) and `provider: {"require_parameters": true}`, which tells OpenRouter to route only to providers that support every parameter sent. All 25 replies were valid JSON matching the schema.
+- Content was not always right. The prompt asked for one card called Test in column 1. 21 of 25 replies did that. By provider: PrimeIntellect 16 of 16, DekaLLM 3 of 4 (one reply had no actions), CoreWeave 2 of 5 (three garbage titles, one also with `column_id` 0).
+- For Part 9: use JSON-schema structured output with `require_parameters`. Schema-valid output can still be wrong, so actions must still be checked against the board. Whether to steer away from particular providers is a Part 9 decision; 25 requests is a small sample.
 
 Tests:
-- pytest: a missing key gives a clear error; network errors and non-200 responses become a 502 with a short message (OpenRouter mocked)
-- Live test, skipped when no key is set: the answer contains "4"
+- [x] pytest (12 new: 11 with OpenRouter faked, plus the live test. 65 pass and 1 is skipped without a key): ping needs sign-in; the answer comes back, and the request goes to `https://openrouter.ai/api/v1/chat/completions` with the key and model; a missing key gives the 503; 400, 401, 402, 429, 500 and 503 from OpenRouter each become 502 with one request (no retries); a refused connection and a timeout each become 502 with their own message. OpenRouter is faked with `httpx2.MockTransport` behind the real SDK
+- [x] Live test, skipped when no key is set: the answer contains "4". Passed with the key; the answer was "2 + 2 = 4."
+- [x] Tests catch the bugs: turning SDK retries back on fails 5 tests, and catching connection errors before timeouts fails 1
+- [x] Container: built from this branch and run with the real `.env` on port 8001. `/api/ai/ping` gave 401 signed out and `{"answer":"2 + 2 = 4."}` signed in, with no errors in the logs
 
-Success criteria: the live "2+2" test passes, and the structured-output check is recorded.
+Success criteria: the live "2+2" test passes, and the structured-output check is recorded. Met.
 
 ## Part 9: AI with board context and structured outputs
 

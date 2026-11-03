@@ -7,6 +7,7 @@ FastAPI app that serves the API under `/api` and the built frontend at `/`. It r
 - Python 3.14, managed with `uv` (`pyproject.toml`, `uv.lock`)
 - FastAPI, served by Uvicorn
 - Starlette `SessionMiddleware` (needs `itsdangerous`) for the sign-in cookie
+- `openai` SDK pointed at OpenRouter for AI calls. It uses `httpx2`
 - pytest, with `httpx2` for FastAPI's `TestClient`
 
 ## Layout
@@ -17,6 +18,7 @@ app/
   auth.py          Sign-in routes, the current_user dependency, and the session secret.
   db.py            SQLite connections, transactions and schema steps. Creates the database at startup.
   board.py         Seed data, every board read and change, and the /api/board, /api/columns and /api/cards routes.
+  ai.py            OpenRouter client, complete(prompt), and the temporary /api/ai/ping route.
 tests/
   conftest.py      Points PM_STATIC_DIR at tests/fixtures/static before the app is imported.
                    Fixtures: database (a temp file per test, used automatically), client (new per
@@ -24,6 +26,7 @@ tests/
   fixtures/        A small fake frontend build, plus secret.txt outside it for traversal tests.
   test_auth.py     Sign-in, sign-out, session and cookie tests.
   test_board.py    Board routes: seed, rename, create, edit, move, delete, validation, ownership, parallel requests.
+  test_ai.py       AI calls against a fake OpenRouter, plus one live test skipped without a key.
   test_db.py       Schema matches docs/schema.json, schema steps, foreign keys.
   test_main.py     Tests for health, the /api catch-all and static serving.
   test_schema.py   Checks docs/schema.json (see docs/DATABASE.md).
@@ -43,6 +46,7 @@ uv.lock            Locked versions. Commit it with any dependency change.
 - `PATCH /api/cards/{id}`: any of `{"title", "details", "column_id", "position"}`. Edits or moves a card. Moving with only `column_id` puts it last, and a position past the end also puts it last.
 - `DELETE /api/cards/{id}`: deletes a card.
 - All five board routes need sign-in and return the whole board. Titles are 1 to 200 characters after trimming spaces, details up to 2,000, and positions 0 or more. Bad input gets 422. A column or card that is missing, or belongs to another user, gets 404.
+- `POST /api/ai/ping`: needs sign-in. Asks the AI "What is 2+2?" and returns `{"answer"}`. Temporary: Part 9 removes it.
 - Any other `/api/...` path: JSON 404, so API callers never get the frontend's HTML 404 page.
 - `/`: the built frontend, served by `StaticFiles(html=True)` from `PM_STATIC_DIR`. The default is `frontend/out`, so run `npm run build` in `frontend/` first when running the backend outside Docker. Unknown pages get `404.html`. Starlette's `StaticFiles` rejects paths that resolve outside the folder.
 
@@ -63,13 +67,22 @@ See `docs/DATABASE.md` for the tables and the rules. In code:
 - To change the schema, add a step to `db.MIGRATIONS`. Never edit a step that has shipped.
 - `board.NotFound` becomes a 404 through the handler in `main.py`.
 
+## AI
+
+- `ai.complete(prompt)` sends one user message to `openai/gpt-oss-120b` through `https://openrouter.ai/api/v1` and returns the reply text.
+- `OPENROUTER_API_KEY` is read on each call, so the app starts without it. Without it, AI routes return 503 "AI is not configured: OPENROUTER_API_KEY is not set."
+- Timeout is 30 seconds, and SDK retries are off. A timeout, a failed connection or a non-2xx reply from OpenRouter raises `ai.AIError`, which `main.py` turns into a 502 with a short message.
+- Tests fake OpenRouter by setting `ai.http_client` to an `httpx2.Client` on a `MockTransport`, so the real SDK runs, including its error handling. See the `fake_openrouter` fixture in `tests/test_ai.py`.
+- JSON-schema structured output works for this model through OpenRouter when the request sends `provider: {"require_parameters": true}`. See "Structured output result" under Part 8 in `docs/PLAN.md` before building on it.
+
 ## Commands
 
 Run from `backend/`:
 
 ```bash
 uv sync                  # Install dependencies into .venv
-uv run pytest            # Run the tests
+uv run pytest            # Run the tests (the live AI test is skipped)
+uv run --env-file ../.env pytest   # Also run the live AI test with the real key
 uv run uvicorn app.main:app --reload   # Dev server on http://127.0.0.1:8000
 uv add <package>         # Add a dependency (use --dev for test-only ones)
 ```
