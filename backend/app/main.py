@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import auth, board, db
+from app import ai, auth, board, db
 
 # The built frontend. The Docker image sets PM_STATIC_DIR; locally it is
 # frontend/out after `npm run build`.
@@ -44,11 +44,22 @@ def health() -> dict[str, str]:
 
 app.include_router(auth.router)
 app.include_router(board.router)
+app.include_router(ai.router)
 
 
 @app.exception_handler(board.NotFound)
 def board_not_found(request: Request, exc: board.NotFound) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(ai.NotConfigured)
+def ai_not_configured(request: Request, exc: ai.NotConfigured) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(ai.AIError)
+def ai_failed(request: Request, exc: ai.AIError) -> JSONResponse:
+    return JSONResponse(status_code=502, content={"detail": str(exc)})
 
 
 # Keep unknown /api paths as JSON 404s instead of falling through to the
