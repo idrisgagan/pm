@@ -1,7 +1,8 @@
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,7 +11,7 @@ from fastapi.testclient import TestClient
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 os.environ["PM_STATIC_DIR"] = str(FIXTURES_DIR / "static")
 
-from app import db  # noqa: E402
+from app import ai, db  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -34,3 +35,44 @@ def signed_in_client(client: TestClient) -> TestClient:
     response = client.post("/api/login", json={"username": "user", "password": "password"})
     assert response.status_code == 200
     return client
+
+
+Handler = Callable[[httpx2.Request], httpx2.Response]
+
+
+def completion(content: str | None, finish_reason: str = "stop") -> httpx2.Response:
+    return httpx2.Response(
+        200,
+        json={
+            "id": "gen-1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": ai.MODEL,
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": finish_reason,
+                    "message": {"role": "assistant", "content": content},
+                }
+            ],
+        },
+    )
+
+
+@pytest.fixture
+def fake_openrouter(monkeypatch: pytest.MonkeyPatch) -> Callable[[Handler], list[httpx2.Request]]:
+    # The real SDK, talking to a handler instead of the network. Returns the
+    # list of requests the handler saw.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    def install(handler: Handler) -> list[httpx2.Request]:
+        seen: list[httpx2.Request] = []
+
+        def record(request: httpx2.Request) -> httpx2.Response:
+            seen.append(request)
+            return handler(request)
+
+        monkeypatch.setattr(ai, "http_client", httpx2.Client(transport=httpx2.MockTransport(record)))
+        return seen
+
+    return install

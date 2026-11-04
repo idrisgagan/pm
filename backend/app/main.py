@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import ai, auth, board, db
+from app import ai, auth, board, chat, db
 
 # The built frontend. The Docker image sets PM_STATIC_DIR; locally it is
 # frontend/out after `npm run build`.
@@ -44,7 +44,7 @@ def health() -> dict[str, str]:
 
 app.include_router(auth.router)
 app.include_router(board.router)
-app.include_router(ai.router)
+app.include_router(chat.router)
 
 
 @app.exception_handler(board.NotFound)

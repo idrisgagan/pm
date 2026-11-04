@@ -1,7 +1,9 @@
 """Every read and change of a user's board. The API routes below and the AI
-chat (Part 9) both go through these functions."""
+chat in chat.py both go through these functions."""
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -100,7 +102,7 @@ def _board_id(conn: sqlite3.Connection, username: str) -> int:
     return board_id
 
 
-def _read(conn: sqlite3.Connection, board_id: int) -> Board:
+def read(conn: sqlite3.Connection, board_id: int) -> Board:
     columns = {
         column_id: Column(id=column_id, title=title, cards=[])
         for column_id, title in conn.execute(
@@ -152,61 +154,56 @@ def _renumber(conn: sqlite3.Connection, column_id: int, card_ids: list[int]) -> 
     )
 
 
+@contextmanager
+def open_board(conn: sqlite3.Connection, username: str) -> Iterator[int]:
+    """One transaction on the user's board. Yields the board id for the
+    change functions below, which do not open transactions of their own."""
+    with db.transaction(conn):
+        yield _board_id(conn, username)
+
+
 def get_board(conn: sqlite3.Connection, username: str) -> Board:
-    with db.transaction(conn):
-        return _read(conn, _board_id(conn, username))
+    with open_board(conn, username) as board_id:
+        return read(conn, board_id)
 
 
-def rename_column(conn: sqlite3.Connection, username: str, column_id: int, title: str) -> Board:
-    with db.transaction(conn):
-        board_id = _board_id(conn, username)
-        _check_column(conn, board_id, column_id)
-        conn.execute("UPDATE columns SET title = ? WHERE id = ?", (title, column_id))
-        return _read(conn, board_id)
+def rename_column(conn: sqlite3.Connection, board_id: int, column_id: int, title: str) -> None:
+    _check_column(conn, board_id, column_id)
+    conn.execute("UPDATE columns SET title = ? WHERE id = ?", (title, column_id))
 
 
-def create_card(conn: sqlite3.Connection, username: str, card: CardCreate) -> Board:
-    with db.transaction(conn):
-        board_id = _board_id(conn, username)
-        _check_column(conn, board_id, card.column_id)
-        conn.execute(
-            "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
-            (card.column_id, card.title, card.details, len(_card_ids(conn, card.column_id))),
-        )
-        return _read(conn, board_id)
+def create_card(conn: sqlite3.Connection, board_id: int, card: CardCreate) -> None:
+    _check_column(conn, board_id, card.column_id)
+    conn.execute(
+        "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
+        (card.column_id, card.title, card.details, len(_card_ids(conn, card.column_id))),
+    )
 
 
-def update_card(
-    conn: sqlite3.Connection, username: str, card_id: int, changes: CardUpdate
-) -> Board:
-    with db.transaction(conn):
-        board_id = _board_id(conn, username)
-        from_column = _card_column(conn, board_id, card_id)
-        if changes.title is not None:
-            conn.execute("UPDATE cards SET title = ? WHERE id = ?", (changes.title, card_id))
-        if changes.details is not None:
-            conn.execute("UPDATE cards SET details = ? WHERE id = ?", (changes.details, card_id))
-        if changes.column_id is not None or changes.position is not None:
-            to_column = changes.column_id if changes.column_id is not None else from_column
-            _check_column(conn, board_id, to_column)
-            # Take the card out first, so a same-column move counts positions
-            # without it.
-            target = _card_ids(conn, to_column, without=card_id)
-            position = len(target) if changes.position is None else changes.position
-            target.insert(min(position, len(target)), card_id)
-            _renumber(conn, to_column, target)
-            if to_column != from_column:
-                _renumber(conn, from_column, _card_ids(conn, from_column))
-        return _read(conn, board_id)
+def update_card(conn: sqlite3.Connection, board_id: int, card_id: int, changes: CardUpdate) -> None:
+    from_column = _card_column(conn, board_id, card_id)
+    to_column = changes.column_id if changes.column_id is not None else from_column
+    # Check before writing anything, so a bad column changes nothing.
+    _check_column(conn, board_id, to_column)
+    if changes.title is not None:
+        conn.execute("UPDATE cards SET title = ? WHERE id = ?", (changes.title, card_id))
+    if changes.details is not None:
+        conn.execute("UPDATE cards SET details = ? WHERE id = ?", (changes.details, card_id))
+    if changes.column_id is not None or changes.position is not None:
+        # Take the card out first, so a same-column move counts positions
+        # without it.
+        target = _card_ids(conn, to_column, without=card_id)
+        position = len(target) if changes.position is None else changes.position
+        target.insert(min(position, len(target)), card_id)
+        _renumber(conn, to_column, target)
+        if to_column != from_column:
+            _renumber(conn, from_column, _card_ids(conn, from_column))
 
 
-def delete_card(conn: sqlite3.Connection, username: str, card_id: int) -> Board:
-    with db.transaction(conn):
-        board_id = _board_id(conn, username)
-        column_id = _card_column(conn, board_id, card_id)
-        conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
-        _renumber(conn, column_id, _card_ids(conn, column_id))
-        return _read(conn, board_id)
+def delete_card(conn: sqlite3.Connection, board_id: int, card_id: int) -> None:
+    column_id = _card_column(conn, board_id, card_id)
+    conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
+    _renumber(conn, column_id, _card_ids(conn, column_id))
 
 
 router = APIRouter(prefix="/api")
@@ -222,19 +219,27 @@ def read_board(username: Username, conn: Connection) -> Board:
 
 @router.patch("/columns/{column_id}")
 def patch_column(column_id: int, body: ColumnUpdate, username: Username, conn: Connection) -> Board:
-    return rename_column(conn, username, column_id, body.title)
+    with open_board(conn, username) as board_id:
+        rename_column(conn, board_id, column_id, body.title)
+        return read(conn, board_id)
 
 
 @router.post("/cards", status_code=201)
 def post_card(body: CardCreate, username: Username, conn: Connection) -> Board:
-    return create_card(conn, username, body)
+    with open_board(conn, username) as board_id:
+        create_card(conn, board_id, body)
+        return read(conn, board_id)
 
 
 @router.patch("/cards/{card_id}")
 def patch_card(card_id: int, body: CardUpdate, username: Username, conn: Connection) -> Board:
-    return update_card(conn, username, card_id, body)
+    with open_board(conn, username) as board_id:
+        update_card(conn, board_id, card_id, body)
+        return read(conn, board_id)
 
 
 @router.delete("/cards/{card_id}")
 def remove_card(card_id: int, username: Username, conn: Connection) -> Board:
-    return delete_card(conn, username, card_id)
+    with open_board(conn, username) as board_id:
+        delete_card(conn, board_id, card_id)
+        return read(conn, board_id)

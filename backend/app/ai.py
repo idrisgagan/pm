@@ -1,15 +1,11 @@
-"""Calls to the AI model through OpenRouter, and the temporary /api/ai/ping
-route that checks the connection (removed in Part 9)."""
+"""Calls to the AI model through OpenRouter."""
 
 import os
-from typing import Annotated
 
 import httpx2
 import openai
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-
-from app.auth import current_user
+import pydantic
+from openai.types.chat import ChatCompletionMessageParam
 
 MODEL = "openai/gpt-oss-120b"
 BASE_URL = "https://openrouter.ai/api/v1"
@@ -42,10 +38,16 @@ def _client() -> openai.OpenAI:
     )
 
 
-def complete(prompt: str) -> str:
+def ask[T: pydantic.BaseModel](messages: list[ChatCompletionMessageParam], output: type[T]) -> T:
+    """Send the messages and return the reply parsed into `output`, using
+    JSON-schema structured output."""
     try:
-        response = _client().chat.completions.create(
-            model=MODEL, messages=[{"role": "user", "content": prompt}]
+        response = _client().chat.completions.parse(
+            model=MODEL,
+            messages=messages,
+            response_format=output,
+            # Route only to providers that support structured output.
+            extra_body={"provider": {"require_parameters": True}},
         )
     # APITimeoutError is a kind of APIConnectionError, so it goes first.
     except openai.APITimeoutError as exc:
@@ -54,16 +56,13 @@ def complete(prompt: str) -> str:
         raise AIError("Could not reach the AI service.") from exc
     except openai.APIStatusError as exc:
         raise AIError(f"The AI service returned an error ({exc.status_code}).") from exc
-    return response.choices[0].message.content or ""
-
-
-router = APIRouter(prefix="/api/ai")
-
-
-class Answer(BaseModel):
-    answer: str
-
-
-@router.post("/ping")
-def ping(username: Annotated[str, Depends(current_user)]) -> Answer:
-    return Answer(answer=complete("What is 2+2?"))
+    except (
+        pydantic.ValidationError,
+        openai.LengthFinishReasonError,
+        openai.ContentFilterFinishReasonError,
+    ) as exc:
+        raise AIError("The AI service gave an answer the app could not read.") from exc
+    parsed = response.choices[0].message.parsed
+    if parsed is None:
+        raise AIError("The AI service gave an answer the app could not read.")
+    return parsed

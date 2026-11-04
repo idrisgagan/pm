@@ -209,6 +209,21 @@ def test_unknown_card_is_404(signed_in_client: TestClient) -> None:
     assert signed_in_client.delete("/api/cards/999").status_code == 404
 
 
+def test_update_to_unknown_column_writes_nothing() -> None:
+    # The AI chat catches NotFound inside its transaction, so a failed change
+    # must not have written anything before it failed.
+    db.init()
+    conn = db.connect()
+    try:
+        with board.open_board(conn, "user") as board_id:
+            card = board.read(conn, board_id).columns[0].cards[0]
+            with pytest.raises(board.NotFound):
+                board.update_card(conn, board_id, card.id, board.CardUpdate(title="New", column_id=999))
+            assert board.read(conn, board_id).columns[0].cards[0] == card
+    finally:
+        conn.close()
+
+
 def test_cannot_touch_another_users_board(signed_in_client: TestClient) -> None:
     conn = db.connect()
     try:
