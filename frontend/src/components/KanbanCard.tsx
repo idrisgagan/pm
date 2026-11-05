@@ -64,52 +64,54 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
       aria-label={card.title}
       data-testid={card.id}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          {editing === "title" ? (
-            <input
-              autoFocus
-              defaultValue={card.title}
-              maxLength={200}
-              aria-label="Card title"
-              onPointerDown={stopDrag}
-              onBlur={(event) => finishEdit("title", event.currentTarget.value)}
-              onKeyDown={(event) => handleEditKeys(event, card.title)}
-              className="w-full rounded-lg border border-[var(--primary-blue)] px-2 py-1 font-display text-base font-semibold text-[var(--navy-dark)] outline-none"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditing("title")}
-              aria-label={`Edit ${card.title}`}
-              className="w-full cursor-text text-left font-display text-base font-semibold text-[var(--navy-dark)]"
-            >
-              {card.title}
-            </button>
-          )}
-          {editing === "details" ? (
-            <textarea
-              autoFocus
-              defaultValue={card.details}
-              maxLength={2000}
-              rows={3}
-              aria-label="Card details"
-              onPointerDown={stopDrag}
-              onBlur={(event) => finishEdit("details", event.currentTarget.value)}
-              onKeyDown={(event) => handleEditKeys(event, card.details)}
-              className="mt-2 w-full resize-none rounded-lg border border-[var(--primary-blue)] px-2 py-1 text-sm leading-6 text-[var(--gray-text)] outline-none"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditing("details")}
-              aria-label={`Edit details of ${card.title}`}
-              className="mt-2 w-full cursor-text whitespace-pre-line text-left text-sm leading-6 text-[var(--gray-text)]"
-            >
-              {card.details || "No details yet."}
-            </button>
-          )}
-        </div>
+      <div className="min-w-0">
+        {editing === "title" ? (
+          <input
+            autoFocus
+            defaultValue={card.title}
+            maxLength={200}
+            aria-label="Card title"
+            onPointerDown={stopDrag}
+            onBlur={(event) => finishEdit("title", event.currentTarget.value)}
+            onKeyDown={(event) => handleEditKeys(event, card.title)}
+            className="w-full rounded-lg border border-[var(--primary-blue)] px-2 py-1 font-display text-base font-semibold text-[var(--navy-dark)] outline-none"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditing("title")}
+            aria-label={`Edit ${card.title}`}
+            className="w-full cursor-text text-left font-display text-base font-semibold text-[var(--navy-dark)] wrap-anywhere"
+          >
+            {card.title}
+          </button>
+        )}
+        {editing === "details" ? (
+          <textarea
+            autoFocus
+            defaultValue={card.details}
+            maxLength={2000}
+            rows={3}
+            aria-label="Card details"
+            onPointerDown={stopDrag}
+            onBlur={(event) => finishEdit("details", event.currentTarget.value)}
+            onKeyDown={(event) => handleEditKeys(event, card.details)}
+            className="mt-2 w-full resize-none rounded-lg border border-[var(--primary-blue)] px-2 py-1 text-sm leading-6 text-[var(--gray-text)] outline-none"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditing("details")}
+            aria-label={`Edit details of ${card.title}`}
+            className="mt-2 w-full cursor-text whitespace-pre-line text-left text-sm leading-6 text-[var(--gray-text)]"
+          >
+            {card.details || "No details yet."}
+          </button>
+        )}
+      </div>
+      {/* Below the text, not beside the title, so titles get the card's full
+          width in narrow columns. */}
+      <div className="mt-2 flex justify-end">
         <button
           type="button"
           onClick={() => onDelete(card.id)}
