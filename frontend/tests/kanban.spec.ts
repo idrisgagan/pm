@@ -1,19 +1,10 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
-import { SEED, openFreshBoard } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { SEED, card, cardTitles, column, openFreshBoard } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await openFreshBoard(page);
 });
 
-const column = (page: Page, index: number) =>
-  page.locator('[data-testid^="column-"]').nth(index);
-
-// A card is a dnd-kit button labelled with its title.
-const card = (scope: Page | Locator, title: string) =>
-  scope.getByRole("button", { name: title, exact: true });
-
-const cardTitles = (scope: Locator) =>
-  scope.locator("article").getByRole("button", { name: /^Edit (?!details)/ });
 
 test("loads the board from the server", async ({ page }) => {
   await expect(page.locator('[data-testid^="column-"]')).toHaveCount(5);

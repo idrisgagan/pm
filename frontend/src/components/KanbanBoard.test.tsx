@@ -10,7 +10,7 @@ const serverBoard = (backlog = "Backlog"): ApiBoard => ({
   ],
 });
 
-type Reply = { status?: number; body?: ApiBoard };
+type Reply = { status?: number; body?: unknown };
 
 // GET /api/board answers with the board. Other requests answer with the reply
 // for "METHOD path", or the unchanged board.
@@ -153,6 +153,27 @@ describe("KanbanBoard", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not save your change");
     expect(await within(column).findByTestId("card-7")).toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([path]) => path === "/api/board")).toHaveLength(2);
+  });
+
+  it("replaces the board with the one in a chat reply and keeps the draft", async () => {
+    const changed = serverBoard();
+    changed.columns[1].cards.push({ id: 9, title: "From the AI", details: "" });
+    const fetchMock = mockApi({
+      "POST /api/chat": { body: { reply: "Added it.", applied: [], skipped: [], board: changed } },
+    });
+    await renderBoard();
+    const box = screen.getByLabelText("Message");
+
+    await userEvent.type(box, "Add a card to Done{Enter}");
+    await userEvent.type(box, "Next question");
+
+    expect(await within(screen.getByTestId("column-2")).findByTestId("card-9")).toHaveTextContent(
+      "From the AI"
+    );
+    expect(screen.getByText("Added it.")).toBeInTheDocument();
+    expect(box).toHaveValue("Next question");
+    expect(screen.queryByText("Loading board...")).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([path]) => path === "/api/board")).toHaveLength(1);
   });
 
   it("signs out when the session has ended", async () => {

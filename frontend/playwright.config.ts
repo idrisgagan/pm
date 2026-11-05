@@ -29,7 +29,8 @@ export default defineConfig({
     command:
       `docker rm -f ${CONTAINER} >/dev/null 2>&1; ` +
       `docker build -q -t ${CONTAINER} .. >/dev/null && ` +
-      `exec docker run --rm --name ${CONTAINER} -p 127.0.0.1:${PORT}:8000 ${CONTAINER}`,
+      // -e passes OPENROUTER_API_KEY only if it is set in this shell, for the live test.
+      `exec docker run --rm --name ${CONTAINER} -e OPENROUTER_API_KEY -p 127.0.0.1:${PORT}:8000 ${CONTAINER}`,
     url: `http://127.0.0.1:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 300_000,

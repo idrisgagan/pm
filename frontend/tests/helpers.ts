@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import type { ApiBoard } from "../src/lib/api";
 
 export const signIn = async (page: Page, password = "password") => {
@@ -50,3 +50,13 @@ export const openFreshBoard = async (page: Page) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Kanban Studio" })).toBeVisible();
 };
+
+export const column = (page: Page, index: number) =>
+  page.locator('[data-testid^="column-"]').nth(index);
+
+// A card is a dnd-kit button labelled with its title.
+export const card = (scope: Page | Locator, title: string) =>
+  scope.getByRole("button", { name: title, exact: true });
+
+export const cardTitles = (scope: Locator) =>
+  scope.locator("article").getByRole("button", { name: /^Edit (?!details)/ });

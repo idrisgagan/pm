@@ -64,3 +64,28 @@ export const updateCard = (cardId: number, changes: CardChanges) =>
 
 export const deleteCard = (cardId: number) =>
   request<ApiBoard>(`/api/cards/${cardId}`, { method: "DELETE" });
+
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+// A card change the AI asked for. Fields an action does not use are null.
+export type ChatAction = {
+  type: "create" | "update" | "move" | "delete";
+  card_id: number | null;
+  column_id: number | null;
+  title: string | null;
+  details: string | null;
+  position: number | null;
+};
+
+export type ChatReply = {
+  reply: string;
+  applied: ChatAction[];
+  skipped: { action: ChatAction; reason: string }[];
+  board: ApiBoard;
+};
+
+export const chat = (message: string, history: ChatMessage[]) =>
+  request<ChatReply>("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, history }),
+  });
