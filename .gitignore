@@ -177,3 +177,6 @@ cython_debug/
 
 # SQLite database, created by the backend at startup
 backend/data/
+
+# Claude Code worktrees: full checkouts of this repo
+.claude/worktrees/
