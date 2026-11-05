@@ -234,18 +234,26 @@ Success criteria: chat requests change the board correctly in mocked and live te
 
 Goal: a sidebar on the board page for full AI chat. When the AI changes the board, the board updates on screen automatically.
 
-- [ ] `ChatSidebar` component next to the board, using the color scheme in `AGENTS.md`
-- [ ] Conversation history in page state, sent with each message
-- [ ] Enter sends, Shift+Enter adds a new line. Disable sending while a reply is pending
-- [ ] Message labels are readable on both user and assistant bubbles *(review)*
-- [ ] When the response has a board, replace the board on screen with it. No full-page loading screen, and the chat draft is kept *(review)*
-- [ ] Show skipped actions as a short note under the reply
-- [ ] Errors show in the sidebar and leave the board unchanged
-- [ ] Update `frontend/AGENTS.md`
+- [x] `ChatSidebar` component next to the board, using the color scheme in `AGENTS.md`: navy heading, yellow accent line, purple Send button, gray supporting text
+- [x] Layout: beside the board from 1536px wide (Tailwind `2xl`), sticking while the page scrolls; under the board below that. Planned for wide screens in general; changed during the build because at 1280px the sidebar left card titles about 16px of room. The page's maximum width went from 1500px to 1800px so columns keep their room when the sidebar is beside them
+- [x] Conversation history in the sidebar's state, sent with each message. Cut to the last 20 messages of up to 4,000 characters each, the backend's limits; without that, the 11th exchange would get a 422
+- [x] Enter sends, Shift+Enter adds a new line. Disable sending while a reply is pending. The box takes up to 2,000 characters
+- [x] Message labels are readable on both user and assistant bubbles: "You" in yellow on navy, "AI" in purple on light gray *(review)*
+- [x] When the response has a board, replace the board on screen with it. No full-page loading screen, and the chat draft is kept *(review)*
+- [x] Show skipped actions as a short note under the reply. Skipped actions with every field null are left out (approved 2026-11-04)
+- [x] Errors show in the sidebar and leave the board unchanged. The message goes back into the box for a retry, and text typed while waiting is kept. 503, other error statuses and network failures each get their own text. A 401 signs out
+- [x] Card layout (found during the build): the Remove button took about 72px beside every card title, and long title words ran under it. This already happened on `main` without the sidebar: at 1100px wide, "Prototype" overlapped "Remove". Remove now sits below the details, and titles use `wrap-anywhere`
+- [x] Update `frontend/AGENTS.md`, plus one line in `README.md` for the live browser test
 
 Tests:
-- Unit: sending, pending state, error display, board replaced from the response
-- E2E with the AI mocked at the backend: ask for a card, see it appear on the board without a reload
-- Live E2E, skipped without a key: one real request that creates a card
+- [x] Unit (18 new, 49 total): 17 in `ChatSidebar.test.tsx` (sending, history, the 20-message cut, Shift+Enter, empty message, pending, four error cases, typed text kept, retry, 401, skipped notes, label colors) and 1 in `KanbanBoard.test.tsx` (a chat reply replaces the board, keeps the draft and does not reload the board)
+- [x] Tests catch the bugs. Each of these 12 breaks fails at least one unit test: history not cut to 20, history content not cut, board not replaced, empty actions shown, draft not put back, typed text lost on error, Shift+Enter sends, sending while pending, failed message kept in history, labels the same color, 401 not signing out, 503 not told apart
+- [x] E2E with the AI faked in the browser (`page.route`), not at the backend (approved 2026-11-04): ask for a card and see it appear without a reload; a 502 shows the error, puts the message back and leaves the board unchanged. The backend side is covered by the Part 9 pytest tests
+- [x] Live E2E, skipped unless `OPENROUTER_API_KEY` is set in the shell (Playwright passes it into the container with `docker run -e`): a real request creates a card, and it is still there after a reload. Passed in 3.2 seconds
+- [x] All 17 browser tests pass, with the live one skipped
+- [x] Live, against the container through `/api/chat`: one request each to rename, move and delete a card. Each was applied as asked, with nothing skipped and no errors in the logs. Create is covered by the live browser test
+- [x] By eye, from screenshots of the built image with a faked reply: 1280px (sidebar under the board), 1600px and 1920px (beside), and 390px phone width. Labels can be read on both bubbles, the skipped note shows, and no title overlaps Remove. Sticking measured at 1600 by 500px: after a 500px scroll the sidebar's top was at -16px, against -156px without sticking. It is pushed up once the board area ends
 
-Success criteria: a user can ask the AI to create, edit, move or delete cards and see the board update, and all tests pass.
+Known limit, not fixed: if a chat reply and a board save reach the browser at almost the same time, the one that arrives last decides what the screen shows until the next change or reload. The database is right either way.
+
+Success criteria: a user can ask the AI to create, edit, move or delete cards and see the board update, and all tests pass. Met.

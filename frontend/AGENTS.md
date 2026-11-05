@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Frontend
 
-A single-page Kanban board. Users sign in first, through the backend. The board is loaded from and saved to the backend, so every change survives a reload.
+A single-page Kanban board with an AI chat sidebar. Users sign in first, through the backend. The board is loaded from and saved to the backend, so every change survives a reload. The AI can change cards through the chat, and the board updates on screen.
 
 The frontend needs the backend for every API call. `npm run dev` shows the login screen but cannot sign in, because nothing answers `/api` on port 3000. To see frontend changes working, rebuild the Docker app with `scripts/start-<os>`.
 
@@ -33,22 +33,24 @@ src/
     globals.css       Color tokens and base styles.
   components/
     LoginForm.tsx     Username and password form. Calls /api/login and shows errors.
-    KanbanBoard.tsx   Loads the board, saves every change, owns the drag-and-drop context.
+    KanbanBoard.tsx   Loads the board, saves every change, owns the drag-and-drop context. Lays out the board and the chat.
+    ChatSidebar.tsx   AI chat: conversation, message box, errors. Hands the board in each reply to KanbanBoard.
     KanbanColumn.tsx  One column: title that saves on blur, sortable card list, add-card form.
-    KanbanCard.tsx    One sortable card. Title and details edit in place. Remove button.
+    KanbanCard.tsx    One sortable card. Title and details edit in place. Remove button below them.
     KanbanCardPreview.tsx  Card shown under the pointer while dragging.
     NewCardForm.tsx   Collapsible form to add a card (title required, details optional).
     editKeys.ts       Enter, Escape and Shift+Enter for fields that save on blur.
   lib/
-    api.ts            Calls to the backend. Non-2xx responses throw ApiError with the status.
+    api.ts            Calls to the backend, including chat(). Non-2xx responses throw ApiError with the status.
     kanban.ts         Types, fromApi, toApiId, moveCard.
   test/
     setup.ts          Loads jest-dom matchers.
     vitest.d.ts       Vitest globals types, plus jest-dom matcher types for Vitest 5.
 tests/
-  helpers.ts          signIn, signInToBoard, and openFreshBoard (signs in and resets the board).
+  helpers.ts          signIn, signInToBoard, openFreshBoard (signs in and resets the board), and the column, card and cardTitles locators.
   auth.spec.ts        Playwright sign-in tests.
   kanban.spec.ts      Playwright board tests. Each starts from a fresh board.
+  chat.spec.ts        Playwright chat tests: two with /api/chat faked in the browser, one live.
 ```
 
 ## Sign-in flow (`src/app/page.tsx`)
@@ -83,12 +85,25 @@ tests/
 - Cards have `aria-label` set to their title. Without it, the card's accessible name is every label inside it joined up.
 - `DndContext` has a fixed `id="kanban-board"`. Without it, the generated `aria-describedby` id differs between server and browser render, and cards lose their screen-reader instructions.
 - Inputs use the backend's limits: titles 200 characters, details 2,000.
+- Card titles use `wrap-anywhere`, and the Remove button sits below the details, so titles get the card's full width and never run under the button in narrow columns.
+
+## AI chat (`src/components/ChatSidebar.tsx`)
+
+- Layout: from Tailwind's `2xl` breakpoint (1536px), the sidebar is a 340px column beside the board and sticks while the page scrolls. Narrower, it sits under the board. Five columns plus the sidebar leave too little room for card titles below 1536px. The page's maximum width is 1800px.
+- The root element uses `overflow-clip`, not `overflow-hidden`. `overflow-hidden` makes it a scroll container, and the sidebar would no longer stick.
+- The conversation lives in the sidebar's state. Each message sends the earlier ones as `history`, cut to the last 20 messages of up to 4,000 characters each, which are the backend's limits.
+- Enter sends, Shift+Enter adds a line. The box takes up to 2,000 characters. While a reply is pending, "Thinking..." shows and Send is disabled. Typing still works.
+- A reply's `board` replaces the board through `onBoard`. The board never shows its loading screen again, so the chat draft and conversation stay.
+- Skipped actions show as one note under the reply, for example "1 change could not be made: Card not found." Skipped actions with every field null are left out.
+- Errors show in the sidebar and leave the board alone. 503 shows "AI is not configured.", any other error status "The AI could not answer. Try again.", and a network failure "Could not reach the server." The message goes back into the box, and anything typed while waiting is kept after it. A 401 signs out.
+- Labels are colored by role: "You" in yellow on the navy bubble, "AI" in purple on the light bubble.
 
 ## Test hooks
 
 - Columns: `data-testid="column-<id>"`, for example `column-3`. Cards: `data-testid="card-<id>"`. These are also the dnd-kit ids.
 - A card is a button named after its title. Inside it: `Edit <title>`, `Edit details of <title>`, `Delete <title>`. Edit fields: `aria-label="Card title"` and `"Card details"`.
 - Column title input: `aria-label="Column title"`.
+- Chat: the sidebar is `role="complementary"` named "AI chat". Messages are in its `role="log"`. The box is `aria-label="Message"`, the button "Send". "Thinking..." is `role="status"`. Errors are `role="alert"`.
 
 ## Commands
 
@@ -101,20 +116,24 @@ npm run test:e2e     # Playwright in a throwaway container on 127.0.0.1:8001
 npm run test:all     # Both
 ```
 
+The live chat test is skipped unless `OPENROUTER_API_KEY` is set in the shell. Playwright passes it into the test container with `docker run -e`. To run it: `set -a; . ../.env; set +a; npm run test:e2e`.
+
 `npm run test:e2e` builds the image from the repo root, tagged `pm-app-e2e`, and runs it on port 8001 with no volume. Every run starts from an empty database, and the app on port 8000 is never touched. Playwright stops the container at the end, and `--rm` removes it. The command uses `sh` syntax, so it has not been run on Windows.
 
 There is one user and one board, so tests run one at a time (`workers: 1`). Board tests call `openFreshBoard`, which resets the board to `SEED` in `tests/helpers.ts` through the API. Card ids change on every reset, so find cards by title, not id.
 
 Keyboard drag tests wait one browser task after picking a card up, because dnd-kit's `KeyboardSensor` adds its arrow-key listener in a `setTimeout`. Keep that wait in any new keyboard test.
 
-Next.js adds an empty `role="alert"` route announcer to every page. Scope alert locators, for example `page.locator("form").getByRole("alert")` or `page.locator("header").getByRole("alert")`.
+Next.js adds an empty `role="alert"` route announcer to every page. Scope alert locators, for example `page.locator("form").getByRole("alert")`, `page.locator("header").getByRole("alert")` or the chat sidebar's `getByRole("alert")`.
 
 ## Tests
 
+- `src/components/ChatSidebar.test.tsx`: sends on Enter and shows the reply; sends history; cuts history to 20 messages of 4,000 characters; Shift+Enter adds a line; no empty sends; pending disables sending; error text for 502, 500, 503 and a network failure, with the message put back; text typed while waiting is kept; retry leaves the failed message out of history; 401 signs out; skipped-change notes, with empty actions left out; label colors by role.
 - `src/lib/api.test.ts`: changes are sent as JSON, non-2xx throws `ApiError` with the status, network errors pass through.
 - `src/lib/kanban.test.ts`: `fromApi` tags ids and keeps order, `toApiId`, and `moveCard` reorder in a column, move to another column, drop on a column.
-- `src/components/KanbanBoard.test.tsx`: loads from the server; rename saves once on blur and skips empty titles; card title saves on Enter; details save on blur with Shift+Enter lines; Escape and an empty title do not save; add; remove; a failed save shows the message and reloads; a 401 signs out.
+- `src/components/KanbanBoard.test.tsx`: loads from the server; rename saves once on blur and skips empty titles; card title saves on Enter; details save on blur with Shift+Enter lines; Escape and an empty title do not save; add; remove; a failed save shows the message and reloads; a chat reply replaces the board and keeps the draft; a 401 signs out.
 - `src/components/LoginForm.test.tsx`: valid sign-in, wrong credentials, server unreachable, both fields required.
 - `src/app/page.test.tsx`: signed out shows the form, signed in shows the board, signing in, signing out, signing out when the request fails, a 401 from the board shows the form.
 - `tests/auth.spec.ts`: login form first, wrong password, stays signed in after reload, sign out, API returns 401 without a session.
+- `tests/chat.spec.ts`: a card from a faked chat reply appears without a reload; a faked 502 shows the error, puts the message back and leaves the board alone; live: the AI adds a card that is still there after a reload.
 - `tests/kanban.spec.ts`: loads the seed board; add, edit, delete, rename, mouse move between columns, keyboard reorder, keyboard move, each checked again after a reload; keyboard instructions linked to cards; a failed save shows the message and the board matches the server.
