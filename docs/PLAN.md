@@ -205,20 +205,30 @@ Success criteria: the live "2+2" test passes, and the structured-output check is
 
 Goal: every AI call sends the board JSON, the user's question and the conversation history. The AI replies with structured output: a message for the user and, optionally, changes to the board.
 
-- [ ] `POST /api/chat`: body has `message` and `history`, both with length limits *(review)*
-- [ ] Prompt: short instructions, plus the board once as compact JSON *(review)*
-- [ ] Output model: `reply` (string) and `actions` (a list of create, update, move or delete card, using the backend's numeric ids)
-- [ ] Use JSON-schema structured output if Part 8 found it supported. Otherwise ask for JSON in the prompt and validate it with the same Pydantic model
-- [ ] Invalid model output returns 502 with a short message, never 500 *(review)*
-- [ ] Apply actions through the Part 6 board module in one transaction. Skip actions that point to ids not on the user's board *(review)*
-- [ ] Response includes `reply`, the applied actions, the skipped actions with a reason, and the updated board *(review)*
-- [ ] Remove `/api/ai/ping`
+- [x] `POST /api/chat` in `backend/app/chat.py`: body has `message` (1 to 2,000 characters after trimming) and `history` (up to 20 user or assistant messages of up to 4,000 characters each) *(review)*
+- [x] Prompt: short instructions, plus the board once as compact JSON, in a system message. Then the history, then the message *(review)*
+- [x] Output model: `reply` (string) and `actions`. Each action has a `type` (create, update, move or delete) and `card_id`, `column_id`, `title`, `details` and `position`, with unused fields null. One flat shape instead of four, approved 2026-11-04
+- [x] JSON-schema structured output (`strict`), with `provider: {"require_parameters": true}`, through the SDK's `chat.completions.parse`. No provider is excluded (decided 2026-11-04; see the live sample below)
+- [x] Invalid model output returns 502 "The AI service gave an answer the app could not read.", never 500 *(review)*
+- [x] Actions are applied in order through the `board.py` change functions in one transaction. An action whose id is not on the user's board, or that fails the board's own checks, is skipped with a reason, and the rest still apply *(review)*
+- [x] Ids prefixed like `card-3`: changed from "skipped and reported" (approved 2026-11-04). Ids are integers in the schema, so a reply with a text id does not match it and returns 502 *(review)*
+- [x] Response includes `reply`, the applied actions, the skipped actions with a reason, and the updated board *(review)*
+- [x] The AI is called outside any transaction, so a slow answer does not hold the database lock
+- [x] `board.py`: the change functions now take a board id and no longer open their own transaction. `open_board` opens one. The API routes behave as before, and the 54 board tests from Part 6 passed unchanged after the refactor. `update_card` now checks the target column before writing, so a change that fails writes nothing
+- [x] Removed `/api/ai/ping` and `ai.complete`. `ai.ask(messages, output)` replaces them
+- [x] Updated `backend/AGENTS.md`
 
 Tests:
-- pytest, OpenRouter mocked: each action type applied; several actions in one reply; unknown or prefixed ids skipped and reported; invalid JSON and missing fields return 502; history and message limits
-- Live test, skipped without a key: "Add a card called Test to Backlog" creates that card
+- [x] pytest (44 new, 109 pass and 1 is skipped without a key). The fake OpenRouter fixture moved to `conftest.py`
+  - `test_ai.py` (20, through `/api/chat`): the request asks for strict JSON schema with `require_parameters`; missing key 503; error statuses and network failures 502 with no retries (carried over from Part 8); not JSON, cut-off JSON, missing `reply`, missing `actions`, an action missing fields, an unknown action type, a `card-1` id, no content, empty content and `finish_reason: length` each return 502 and leave the board unchanged
+  - `test_chat.py` (35): sign-in required; empty, blank and 2,001-character messages and 21-item, over-long and `system`-role history rejected with 422 before any AI call; 2,000 characters and 20 items of 4,000 accepted; the board appears once, as compact JSON, then history in order, then the message; each action type applied; four actions in one reply applied in order; 14 kinds of bad action skipped with their reason while the next action still applies; a card deleted earlier in the same reply is skipped; another user's columns and cards are out of reach for all five kinds of action; another connection can write while the AI is answering
+  - `test_board.py` (1): `update_card` to an unknown column changes nothing
+- [x] Tests catch the bugs. Each of these breaks fails at least one test: dropping `require_parameters` (1), not catching unreadable output (7), not catching an empty parse (2), not catching a bad action (7), calling the AI inside the transaction (1), checking the column after writing (4), sending null details to the board (4), dropping the history (1)
+- [x] Live test, skipped without a key: "Add a card called Test to Backlog" creates that card. Passed
+- [x] Live sample, 40 requests with the same message, each on a fresh database. All 40 created a card titled Test in Backlog. In 39, that was the only action. In 1 (Near AI), the reply also had an `update` with every field null. It was skipped as "Card not found", and the board was right. Providers in the second 20: PrimeIntellect 7, Groq 4, Sail Research 4, Near AI 3, AkashML 1, Crusoe 1. The first 20 did not record the provider. CoreWeave did not appear
+- [x] Container: built from this branch and run with the real `.env` on port 8001. `/api/chat` gave 401 signed out. Signed in, "Add a card called Test to Backlog" created the card, and it was still there on a fresh `GET /api/board`. `/api/ai/ping` gave 404. No errors in the logs. Frontend unit (31) and browser (15) tests still pass
 
-Success criteria: chat requests change the board correctly in mocked and live tests, and bad model output never causes a 500.
+Success criteria: chat requests change the board correctly in mocked and live tests, and bad model output never causes a 500. Met.
 
 ## Part 10: AI chat sidebar
 
