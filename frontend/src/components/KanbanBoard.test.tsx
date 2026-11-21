@@ -1,9 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import type { ApiBoard } from "@/lib/api";
 
 const serverBoard = (backlog = "Backlog"): ApiBoard => ({
+  version: 0,
   columns: [
     { id: 1, title: backlog, cards: [{ id: 7, title: "First card", details: "Notes" }] },
     { id: 2, title: "Done", cards: [] },
@@ -174,6 +175,42 @@ describe("KanbanBoard", () => {
     expect(box).toHaveValue("Next question");
     expect(screen.queryByText("Loading board...")).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([path]) => path === "/api/board")).toHaveLength(1);
+  });
+
+  it("keeps a newer reply when an older one arrives after it", async () => {
+    const board = (version: number, backlog: string, title: string): ApiBoard => ({
+      version,
+      columns: [{ id: 1, title: backlog, cards: [{ id: 7, title, details: "" }] }],
+    });
+    let answerRename: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const request = `${init?.method ?? "GET"} ${String(input)}`;
+      if (request === "PATCH /api/columns/1") {
+        return new Promise<Response>((resolve) => (answerRename = resolve));
+      }
+      if (request === "PATCH /api/cards/7") {
+        // The server applied the rename first, then this edit.
+        return new Response(JSON.stringify(board(2, "Todo", "Second")));
+      }
+      return new Response(JSON.stringify(board(0, "Backlog", "First")));
+    });
+    const column = await renderBoard();
+
+    const input = within(column).getByLabelText("Column title");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Todo");
+    await userEvent.tab();
+    await userEvent.click(within(column).getByRole("button", { name: "Edit First" }));
+    const title = within(column).getByLabelText("Card title");
+    await userEvent.clear(title);
+    await userEvent.type(title, "Second{Enter}");
+    expect(await within(column).findByRole("button", { name: "Edit Second" })).toBeInTheDocument();
+
+    // The rename's reply, the board from before the edit, arrives last.
+    await act(async () => answerRename(new Response(JSON.stringify(board(1, "Todo", "First")))));
+
+    expect(within(column).getByRole("button", { name: "Edit Second" })).toBeInTheDocument();
+    expect(within(column).getByLabelText("Column title")).toHaveValue("Todo");
   });
 
   it("signs out when the session has ended", async () => {

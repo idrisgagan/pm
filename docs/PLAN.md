@@ -1,6 +1,6 @@
 # Project plan
 
-Build the Project Management MVP described in `AGENTS.md`, in ten parts. Each part has a goal, a checklist, tests, and success criteria. Tick items as they are done. Do not start a part until the one before it meets its success criteria.
+Build the Project Management MVP described in `AGENTS.md`, in ten parts, then fixes from code reviews (Part 11 on). Each part has a goal, a checklist, tests, and success criteria. Tick items as they are done. Do not start a part until the one before it meets its success criteria.
 
 The "Rebuild checklist" in `docs/code_review.md` lists bugs found in an earlier build of this app. The checklist items below that come from it are marked *(review)*.
 
@@ -254,6 +254,24 @@ Tests:
 - [x] Live, against the container through `/api/chat`: one request each to rename, move and delete a card. Each was applied as asked, with nothing skipped and no errors in the logs. Create is covered by the live browser test
 - [x] By eye, from screenshots of the built image with a faked reply: 1280px (sidebar under the board), 1600px and 1920px (beside), and 390px phone width. Labels can be read on both bubbles, the skipped note shows, and no title overlaps Remove. Sticking measured at 1600 by 500px: after a 500px scroll the sidebar's top was at -16px, against -156px without sticking. It is pushed up once the board area ends
 
-Known limit, not fixed: if a chat reply and a board save reach the browser at almost the same time, the one that arrives last decides what the screen shows until the next change or reload. The database is right either way.
-
 Success criteria: a user can ask the AI to create, edit, move or delete cards and see the board update, and all tests pass. Met.
+
+## Part 11: Code review fixes (Medium)
+
+Goal: fix the Medium finding in `docs/code_review.md` (2026-11-21). M1: when two saves overlap, an older server reply could arrive last and put an older board back on screen. Part 10 recorded this as a known limit for a chat reply and a board save. The review showed it also happens between two board saves.
+
+- [x] Root cause: the browser cannot tell which reply is newer. Numbering requests in the browser does not work, because a chat request is sent first but its board is read last. Only the server knows the order of changes
+- [x] Schema step 2 adds `boards.version`, default 0. Every change function in `board.py` ends with `_changed`, which adds one. Reads and failed changes leave it alone
+- [x] Every board the API returns has `version`. The chat leaves it out of the board it sends to the AI
+- [x] `KanbanBoard.show` drops a board whose version is lower than the last one shown. Saves, reloads and chat replies all go through it
+- [x] Remove the known-limit note from Part 10
+- [x] Update `docs/schema.json`, `docs/DATABASE.md`, `backend/AGENTS.md`, `frontend/AGENTS.md` and `CLAUDE.md`
+
+Tests:
+- [x] Backend (4 new, 114 total with the live test): version goes up with each change and not on reads; failed changes keep it; the chat raises it once per applied action; a version 1 file upgrades and keeps its boards. The prompt test checks the version is not sent to the AI
+- [x] Unit (1 new, 50 total): an older reply that arrives after a newer one is dropped
+- [x] Tests catch the bug. Each break fails at least one test: the frontend check removed; `delete_card` not raising the version; the version raised before `update_card`'s checks
+- [x] All 18 browser tests pass, including the live one
+- [x] The app on port 8000 upgraded the existing `pm-data` database to schema version 2 and kept its board
+
+Success criteria: a reply that arrives after a newer one no longer changes the screen, and all tests pass. Met.

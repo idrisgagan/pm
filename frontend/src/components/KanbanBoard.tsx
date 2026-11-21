@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -49,13 +49,21 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
     })
   );
 
+  // Replies can arrive out of order. A reply with a lower version than the
+  // last one shown is older, so it is dropped instead of undoing newer changes.
+  const shownVersion = useRef(0);
+  const show = (next: ApiBoard) => {
+    if (next.version < shownVersion.current) {
+      return;
+    }
+    shownVersion.current = next.version;
+    setBoard(fromApi(next));
+  };
+
   const isSignedOut = (error: unknown) => error instanceof ApiError && error.status === 401;
 
   const load = () =>
-    getBoard().then(
-      (next) => setBoard(fromApi(next)),
-      (error) => (isSignedOut(error) ? onSignOut() : setError(LOAD_FAILED))
-    );
+    getBoard().then(show, (error) => (isSignedOut(error) ? onSignOut() : setError(LOAD_FAILED)));
 
   const loadOnMount = useEffectEvent(load);
   useEffect(() => {
@@ -63,11 +71,11 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
   }, []);
 
   // Show the change first, then save it. The server's board replaces the
-  // local one, so the screen always ends up matching the database.
+  // local one, unless a newer reply has already been shown.
   const save = async (next: BoardData, send: () => Promise<ApiBoard>) => {
     setBoard(next);
     try {
-      setBoard(fromApi(await send()));
+      show(await send());
       setError(null);
     } catch (error) {
       if (isSignedOut(error)) {
@@ -249,7 +257,7 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
               </DragOverlay>
             </DndContext>
           </div>
-          <ChatSidebar onBoard={(next) => setBoard(fromApi(next))} onSignOut={onSignOut} />
+          <ChatSidebar onBoard={show} onSignOut={onSignOut} />
         </div>
       </main>
     </div>

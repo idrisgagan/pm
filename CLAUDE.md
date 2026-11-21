@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Read first
 
 - `AGENTS.md`: requirements, tech decisions, color scheme and coding standards. Follow its standards: keep it simple, no extra features, no emojis, find the root cause before fixing.
-- `docs/PLAN.md`: the build plan. Parts 1 to 10 are done. Record new work there in the same style: checklist, tests, success criteria.
+- `docs/PLAN.md`: the build plan. Parts 1 to 11 are done. Record new work there in the same style: checklist, tests, success criteria.
 - `backend/AGENTS.md`, `frontend/AGENTS.md`, `scripts/AGENTS.md`: detailed docs for each folder (routes, behavior, test hooks). Update the matching file when you change behavior.
 - `docs/DATABASE.md` and `docs/schema.json`: the database rules and schema.
 
@@ -48,12 +48,12 @@ One Docker image. Stage 1 builds the Next.js app as a static export (`output: "e
 Request flow:
 
 - Sign-in: `POST /api/login` sets a signed httpOnly `pm_session` cookie (Starlette `SessionMiddleware`, secret from `PM_SESSION_SECRET`). Routes take the user with `Depends(auth.current_user)`. The frontend cannot read the cookie and asks `/api/me` instead.
-- Board: every board route returns the whole board. The frontend's `KanbanBoard.save` shows the change, calls the API, then replaces its state with the server's reply. On failure it reloads the board.
+- Board: every board route returns the whole board, with a `version` that goes up by one with every change. The frontend's `KanbanBoard.save` shows the change, calls the API, then replaces its state with the server's reply. On failure it reloads the board. Every reply goes through `show`, which drops a board older than the one on screen, so replies that arrive out of order cannot undo a newer change.
 - AI chat: `POST /api/chat` reads the board, calls OpenRouter (`openai/gpt-oss-120b`, JSON-schema structured output) outside any transaction, then applies the returned actions in one transaction. Bad actions are skipped with a reason. The response's `board` replaces the board on screen.
 
 Rules that span several files:
 
-- All board changes go through the functions in `backend/app/board.py`, inside `with board.open_board(conn, username) as board_id:`. The change functions do not open their own transaction, so the chat can apply several in one. They check ids before writing, so a `NotFound` means nothing changed, which the chat relies on to skip one action and keep going.
+- All board changes go through the functions in `backend/app/board.py`, inside `with board.open_board(conn, username) as board_id:`. The change functions do not open their own transaction, so the chat can apply several in one. They check ids before writing, so a `NotFound` means nothing changed, which the chat relies on to skip one action and keep going. Each one ends with `_changed(conn, board_id)` to raise the board's version. A new change function must do the same.
 - New `/api` routes must be registered above the `/api/{path}` catch-all in `backend/app/main.py`, or they are never reached.
 - Schema changes: add a new step to `db.MIGRATIONS`, and update `docs/schema.json` and `docs/DATABASE.md`. Never edit a step that has shipped. `tests/test_db.py` checks that the live schema matches `docs/schema.json`.
 - The frontend tags ids (`column-3`, `card-3`) because dnd-kit needs one id space. The backend uses plain integers. Convert with `fromApi` and `toApiId` in `frontend/src/lib/kanban.ts`.

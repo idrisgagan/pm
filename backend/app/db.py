@@ -33,6 +33,9 @@ MIGRATIONS = [
             position INTEGER NOT NULL
         ) STRICT""",
     ],
+    # Raised by every board change, so the frontend can tell which of two
+    # replies is newer.
+    ["ALTER TABLE boards ADD COLUMN version INTEGER NOT NULL DEFAULT 0"],
 ]
 
 

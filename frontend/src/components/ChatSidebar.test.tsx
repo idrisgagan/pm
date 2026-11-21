@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import type { ApiBoard, ChatAction, ChatReply } from "@/lib/api";
 
-const board: ApiBoard = { columns: [{ id: 1, title: "Backlog", cards: [] }] };
+const board: ApiBoard = { version: 0, columns: [{ id: 1, title: "Backlog", cards: [] }] };
 
 const action = (fields: Partial<ChatAction>): ChatAction => ({
   type: "delete",

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "tables": {
     "users": {
       "columns": {
@@ -15,7 +15,8 @@
           "not_null": true,
           "unique": true,
           "references": { "table": "users", "column": "id", "on_delete": "CASCADE" }
-        }
+        },
+        "version": { "type": "INTEGER", "not_null": true, "default": 0 }
       }
     },
     "columns": {

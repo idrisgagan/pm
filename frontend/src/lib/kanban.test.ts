@@ -3,6 +3,7 @@ import { fromApi, moveCard, toApiId, type Column } from "@/lib/kanban";
 describe("fromApi", () => {
   it("tags ids and keeps card order", () => {
     const board = fromApi({
+      version: 0,
       columns: [
         {
           id: 3,

@@ -73,6 +73,7 @@ tests/
 
 - On mount, loads `GET /api/board`. "Loading board..." shows only until the first load finishes.
 - Every change goes through `save`: show the new board, call the API, then replace the board with the server's reply. If the call fails, reload the board in the background and show "Could not save your change. The board was reloaded." in the header. The message clears after the next successful save.
+- Every board from the server, from a save, a reload or a chat reply, goes through `show`. It drops a board whose `version` is lower than the last one shown, so a slow reply cannot undo a newer change. Equal versions are the same board, so they are shown.
 - No API call runs inside a React state updater. Handlers work out the next board from the current one.
 - Add card: shows once the server replies, because the card needs its id from the server.
 - Rename column: the input is uncontrolled. It saves on blur or Enter, skips empty or unchanged titles, and Escape puts the saved title back. `key={column.title}` resets the input when the saved title changes.
@@ -93,7 +94,7 @@ tests/
 - The root element uses `overflow-clip`, not `overflow-hidden`. `overflow-hidden` makes it a scroll container, and the sidebar would no longer stick.
 - The conversation lives in the sidebar's state. Each message sends the earlier ones as `history`, cut to the last 20 messages of up to 4,000 characters each, which are the backend's limits.
 - Enter sends, Shift+Enter adds a line. The box takes up to 2,000 characters. While a reply is pending, "Thinking..." shows and Send is disabled. Typing still works.
-- A reply's `board` replaces the board through `onBoard`. The board never shows its loading screen again, so the chat draft and conversation stay.
+- A reply's `board` replaces the board through `onBoard`, which is `show` in `KanbanBoard`. The board never shows its loading screen again, so the chat draft and conversation stay.
 - Skipped actions show as one note under the reply, for example "1 change could not be made: Card not found." Skipped actions with every field null are left out.
 - Errors show in the sidebar and leave the board alone. 503 shows "AI is not configured.", any other error status "The AI could not answer. Try again.", and a network failure "Could not reach the server." The message goes back into the box, and anything typed while waiting is kept after it. A 401 signs out.
 - Labels are colored by role: "You" in yellow on the navy bubble, "AI" in purple on the light bubble.
@@ -131,7 +132,7 @@ Next.js adds an empty `role="alert"` route announcer to every page. Scope alert 
 - `src/components/ChatSidebar.test.tsx`: sends on Enter and shows the reply; sends history; cuts history to 20 messages of 4,000 characters; Shift+Enter adds a line; no empty sends; pending disables sending; error text for 502, 500, 503 and a network failure, with the message put back; text typed while waiting is kept; retry leaves the failed message out of history; 401 signs out; skipped-change notes, with empty actions left out; label colors by role.
 - `src/lib/api.test.ts`: changes are sent as JSON, non-2xx throws `ApiError` with the status, network errors pass through.
 - `src/lib/kanban.test.ts`: `fromApi` tags ids and keeps order, `toApiId`, and `moveCard` reorder in a column, move to another column, drop on a column.
-- `src/components/KanbanBoard.test.tsx`: loads from the server; rename saves once on blur and skips empty titles; card title saves on Enter; details save on blur with Shift+Enter lines; Escape and an empty title do not save; add; remove; a failed save shows the message and reloads; a chat reply replaces the board and keeps the draft; a 401 signs out.
+- `src/components/KanbanBoard.test.tsx`: loads from the server; rename saves once on blur and skips empty titles; card title saves on Enter; details save on blur with Shift+Enter lines; Escape and an empty title do not save; add; remove; a failed save shows the message and reloads; an older reply that arrives after a newer one is dropped; a chat reply replaces the board and keeps the draft; a 401 signs out.
 - `src/components/LoginForm.test.tsx`: valid sign-in, wrong credentials, server unreachable, both fields required.
 - `src/app/page.test.tsx`: signed out shows the form, signed in shows the board, signing in, signing out, signing out when the request fails, a 401 from the board shows the form.
 - `tests/auth.spec.ts`: login form first, wrong password, stays signed in after reload, sign out, API returns 401 without a session.

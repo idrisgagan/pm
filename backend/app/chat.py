@@ -88,7 +88,8 @@ def chat(body: ChatRequest, username: Username, conn: Connection) -> ChatRespons
     current = board.get_board(conn, username)
     output = ai.ask(
         [
-            {"role": "system", "content": INSTRUCTIONS + current.model_dump_json()},
+            # The version is for the frontend, not the AI.
+            {"role": "system", "content": INSTRUCTIONS + current.model_dump_json(exclude={"version"})},
             *(message.model_dump() for message in body.history),
             {"role": "user", "content": body.message},
         ],

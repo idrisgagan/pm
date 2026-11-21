@@ -209,6 +209,33 @@ def test_unknown_card_is_404(signed_in_client: TestClient) -> None:
     assert signed_in_client.delete("/api/cards/999").status_code == 404
 
 
+def test_version_goes_up_with_each_change_and_not_on_reads(signed_in_client: TestClient) -> None:
+    assert get_board(signed_in_client)["version"] == 0
+    assert get_board(signed_in_client)["version"] == 0
+    responses = [
+        signed_in_client.patch("/api/columns/1", json={"title": "Ideas"}),
+        signed_in_client.post("/api/cards", json={"column_id": 1, "title": "New"}),
+        signed_in_client.patch("/api/cards/1", json={"title": "Edited"}),
+        signed_in_client.patch("/api/cards/1", json={"column_id": 2, "position": 0}),
+        signed_in_client.delete("/api/cards/1"),
+    ]
+    assert [r.json()["version"] for r in responses] == [1, 2, 3, 4, 5]
+    assert get_board(signed_in_client)["version"] == 5
+
+
+def test_failed_change_keeps_the_version(signed_in_client: TestClient) -> None:
+    signed_in_client.patch("/api/columns/1", json={"title": "Ideas"})
+    responses = [
+        signed_in_client.patch("/api/columns/99", json={"title": "x"}),
+        signed_in_client.patch("/api/cards/99", json={"title": "x"}),
+        signed_in_client.patch("/api/cards/1", json={"column_id": 99}),
+        signed_in_client.delete("/api/cards/99"),
+        signed_in_client.post("/api/cards", json={"column_id": 1, "title": ""}),
+    ]
+    assert [r.status_code for r in responses] == [404, 404, 404, 404, 422]
+    assert get_board(signed_in_client)["version"] == 1
+
+
 def test_update_to_unknown_column_writes_nothing() -> None:
     # The AI chat catches NotFound inside its transaction, so a failed change
     # must not have written anything before it failed.

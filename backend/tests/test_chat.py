@@ -90,6 +90,9 @@ def test_prompt_has_board_once_then_history_then_message(
     system, *rest = messages
     assert system["role"] == "system"
     board_json = signed_in_client.get("/api/board").json()
+    # The version is for the frontend, so the AI does not get it.
+    del board_json["version"]
+    assert "version" not in system["content"]
     # Compact JSON, in the system message, and nowhere else.
     assert system["content"].endswith(json.dumps(board_json, separators=(",", ":")))
     assert request.content.decode().count("Align roadmap themes") == 1
@@ -194,6 +197,19 @@ def test_several_actions_apply_in_order(signed_in_client: TestClient, fake_openr
         "Done": ["Close onboarding sprint"],
     }
     assert signed_in_client.get("/api/board").json() == body["board"]
+
+
+def test_version_goes_up_once_per_applied_action(signed_in_client: TestClient, fake_openrouter) -> None:
+    ai_says(fake_openrouter, [
+        action("create", column_id=1, title="New"),
+        action("delete", card_id=99),
+        action("update", card_id=1, title="Edited"),
+    ])
+
+    body = chat(signed_in_client).json()
+
+    assert len(body["applied"]) == 2
+    assert body["board"]["version"] == 2
 
 
 # Skipping actions

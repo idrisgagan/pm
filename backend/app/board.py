@@ -51,6 +51,9 @@ class Column(BaseModel):
 
 
 class Board(BaseModel):
+    # Goes up by one with every change, so a reply with a lower version is
+    # older than one the frontend already has.
+    version: int
     columns: list[Column]
 
 
@@ -103,6 +106,7 @@ def _board_id(conn: sqlite3.Connection, username: str) -> int:
 
 
 def read(conn: sqlite3.Connection, board_id: int) -> Board:
+    (version,) = conn.execute("SELECT version FROM boards WHERE id = ?", (board_id,)).fetchone()
     columns = {
         column_id: Column(id=column_id, title=title, cards=[])
         for column_id, title in conn.execute(
@@ -116,7 +120,7 @@ def read(conn: sqlite3.Connection, board_id: int) -> Board:
         (board_id,),
     ):
         columns[column_id].cards.append(Card(id=card_id, title=title, details=details))
-    return Board(columns=list(columns.values()))
+    return Board(version=version, columns=list(columns.values()))
 
 
 def _check_column(conn: sqlite3.Connection, board_id: int, column_id: int) -> None:
@@ -147,6 +151,11 @@ def _card_ids(conn: sqlite3.Connection, column_id: int, without: int | None = No
     ]
 
 
+def _changed(conn: sqlite3.Connection, board_id: int) -> None:
+    # Every change function calls this last, after its checks have passed.
+    conn.execute("UPDATE boards SET version = version + 1 WHERE id = ?", (board_id,))
+
+
 def _renumber(conn: sqlite3.Connection, column_id: int, card_ids: list[int]) -> None:
     conn.executemany(
         "UPDATE cards SET column_id = ?, position = ? WHERE id = ?",
@@ -170,6 +179,7 @@ def get_board(conn: sqlite3.Connection, username: str) -> Board:
 def rename_column(conn: sqlite3.Connection, board_id: int, column_id: int, title: str) -> None:
     _check_column(conn, board_id, column_id)
     conn.execute("UPDATE columns SET title = ? WHERE id = ?", (title, column_id))
+    _changed(conn, board_id)
 
 
 def create_card(conn: sqlite3.Connection, board_id: int, card: CardCreate) -> None:
@@ -178,6 +188,7 @@ def create_card(conn: sqlite3.Connection, board_id: int, card: CardCreate) -> No
         "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
         (card.column_id, card.title, card.details, len(_card_ids(conn, card.column_id))),
     )
+    _changed(conn, board_id)
 
 
 def update_card(conn: sqlite3.Connection, board_id: int, card_id: int, changes: CardUpdate) -> None:
@@ -198,12 +209,14 @@ def update_card(conn: sqlite3.Connection, board_id: int, card_id: int, changes: 
         _renumber(conn, to_column, target)
         if to_column != from_column:
             _renumber(conn, from_column, _card_ids(conn, from_column))
+    _changed(conn, board_id)
 
 
 def delete_card(conn: sqlite3.Connection, board_id: int, card_id: int) -> None:
     column_id = _card_column(conn, board_id, card_id)
     conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
     _renumber(conn, column_id, _card_ids(conn, column_id))
+    _changed(conn, board_id)
 
 
 router = APIRouter(prefix="/api")

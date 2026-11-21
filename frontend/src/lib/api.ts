@@ -32,7 +32,8 @@ export const logout = () => request<void>("/api/logout", { method: "POST" });
 
 export type ApiCard = { id: number; title: string; details: string };
 export type ApiColumn = { id: number; title: string; cards: ApiCard[] };
-export type ApiBoard = { columns: ApiColumn[] };
+// version goes up by one with every change on the server.
+export type ApiBoard = { version: number; columns: ApiColumn[] };
 
 // Fields to change on a card. The backend leaves out the ones not sent.
 export type CardChanges = {

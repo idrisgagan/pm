@@ -5,7 +5,7 @@ SCHEMA_PATH = Path(__file__).parents[2] / "docs" / "schema.json"
 
 REQUIRED_COLUMNS = {
     "users": {"id", "username"},
-    "boards": {"id", "user_id"},
+    "boards": {"id", "user_id", "version"},
     "columns": {"id", "board_id", "title", "position"},
     "cards": {"id", "column_id", "title", "details", "position"},
 }

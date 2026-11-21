@@ -1,149 +1,170 @@
 # Code review
 
-Date: 2026-11-01. Scope: the whole repo at commit `ae223d6`.
+Date: 2026-11-21. Scope: the whole repo at commit `f56f166`, after Parts 1 to 10.
 
-This replaces the review of `5facb0a`. `main` was reset to `upstream/main`, the course starter. That code is still on the `before_yolo` branch, locally and on `origin`.
+This replaces the review of `ae223d6` (2026-11-01), which covered the course starter before the backend existed. That version is in git history.
 
 ## Summary
 
-The repo is now the course starting point. It is a frontend-only Kanban demo of about 600 lines of app code, with the build plan in `docs/PLAN.md`. The backend, Docker setup, scripts and AI chat from the previous review are gone. Every finding in that review referred to code that no longer exists.
+The app is in good shape. All tests pass: 110 backend, 49 unit, 18 browser, including both live AI tests. Lint and the type check are clean. 11 of the 12 items on the previous review's rebuild checklist are done, and the twelfth has one gap (L1).
 
-The starter is in good shape. Lint is clean, the build passes, and all 6 unit tests and 3 end-to-end tests pass. There are no High findings.
+There are no Critical or High findings. There is one Medium: when two saves overlap, an older server reply can arrive last and put stale data back on screen. Part 10 of `docs/PLAN.md` recorded this as a known limit for a chat reply and a board save. A probe showed it also happens between two ordinary board saves, with no chat involved. The rest are Low.
 
-**Update, same day:** every Critical, High and Medium item is closed. M1, M2, M4 and L1 are fixed. M3 is fixed except one moderate advisory in the lint toolchain, which no released version fixes and which is accepted below. See "Fix log". Before starting Part 2, read "Rebuild checklist" at the end. It lists the bugs found in the previous build, so the rebuild can avoid them.
+**Update, 2026-11-21:** M1 is fixed. See "Fix log". All Low items are still open.
 
 ## Fix log
 
 | Finding | Change | Verified by |
 |---|---|---|
-| M1 | `next` and `eslint-config-next` 16.1.6 → 16.4.3, then `npm audit fix` | `npm audit --omit=dev`: 0 vulnerabilities |
-| L1 | `src/test/vitest.d.ts` references `vitest/globals`. Required by M1: Next 16.4.3 type-checks test files during `next build`, so the 17 test errors failed the build. | `tsc --noEmit`: 0 errors. `npm run build` passes |
-| M2 | Added `KeyboardSensor` with `sortableKeyboardCoordinates` | New Playwright tests for keyboard reorder and keyboard move between columns. Both fail without the change and pass with it. |
-| M4 (new) | Added `id="kanban-board"` to `DndContext` | New Playwright test checks that the card's `aria-describedby` points to the instructions. The hydration warning no longer appears in the dev server log. |
-| M3 | `vitest` and `@vitest/coverage-v8` 3.2.4 → 5.0.5. `@types/node` ^20 → ^24, because vitest 5 requires ^22 or >=24. | Full `npm audit`: 0 critical, 0 high. The 16 remaining moderate entries all come from the one `minimatch` advisory (accepted, see M3). |
-| M3 follow-on | `src/test/vitest.d.ts` adds jest-dom's matchers to Vitest 5's `Matchers<R, T>` interface. jest-dom 7.0.1, the latest, still extends the old one-parameter `Assertion<T>`. Without this, `toBeInTheDocument` and `toHaveValue` failed type checks, and `next build` failed. | `tsc --noEmit`: 0 errors. A temporary probe confirmed real matchers type-check and a made-up matcher is rejected. |
-
-Final retest, after all fixes:
-
-| Check | Result |
-|---|---|
-| `npx tsc --noEmit` | 0 errors |
-| `npm run lint` | Clean |
-| `npm run build` (Next.js 16.4.3) | Passes |
-| `vitest run --coverage` (5.0.5) | 6 of 6 passed, 82.75% line coverage |
-| `playwright test --repeat-each=3` | 18 of 18 passed (6 tests × 3), no hydration warning |
-| `npm audit --omit=dev` | 0 vulnerabilities |
-| `npm audit` (including dev tools) | 0 critical, 0 high, 16 moderate (all `minimatch`, accepted) |
-
-## What I checked and how
-
-| Check | Result |
-|---|---|
-| Read every tracked file except `package-lock.json` | Done |
-| `npm run lint` | Clean |
-| `npm run build` | Passes. Static output for `/` |
-| `npx tsc --noEmit` | 17 errors, all in the two test files |
-| `vitest run --coverage` | 6 passed, 77% line coverage (this count includes config files, see L2) |
-| `playwright test` (dev server on port 3000) | 3 passed |
-| `npm audit --omit=dev` | 6 advisories: 1 critical, 4 high, 1 moderate |
-| Keyboard behaviour | Temporary Vitest probe (deleted) and dnd-kit source |
-
-Findings marked "from code" were read, not reproduced.
-
-## Medium
-
-### M1. Next.js 16.1.6 has known security advisories (fixed)
-
-- **Where:** `frontend/package.json:21` (`next`), `:37` (`eslint-config-next`)
-- **Evidence:** `npm audit` reports:
-  - `next`: critical. The fix is `next@16.4.3`, not a major version.
-  - `postcss` and `sharp`: high. Both come in through `next` and are fixed by the same upgrade.
-  - `nanoid` and `source-map-js`: high. Transitive, and `npm audit fix` fixes them.
-  - `baseline-browser-mapping`: moderate. Transitive, and `npm audit fix` fixes it.
-- **Context:** Most `next` advisory titles name server features this app does not use: middleware, Server Actions, image optimization and caching. The plan serves a static export from FastAPI, so the Next.js server will only run during development. Two advisory titles name the dev server: "dev HMR websocket CSRF" and "information disclosure in development server's Model Context Protocol endpoint".
-- **Action:** Set `next` and `eslint-config-next` to `16.4.3`, then run `npm install`, `npm audit fix`, and the full test suite.
-
-### M2. Cards cannot be moved with the keyboard (fixed)
-
-- **Where:** `frontend/src/components/KanbanBoard.tsx:22-26`
-- **Evidence:** Each card renders with `role="button"`, `tabindex="0"` and `aria-roledescription="sortable"`. dnd-kit's default screen-reader text says: "To pick up a draggable item, press the space bar. While dragging, use the arrow keys to move the item." Only `PointerSensor` is registered, and there is no `KeyboardSensor` in `src`. So keyboard users can focus a card and hear the instructions, but cannot move it (from code).
-- **Action:** Add `useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })` from `@dnd-kit/core` and `@dnd-kit/sortable`.
-
-### M3. Dev-only tools have advisories that need major upgrades (new, fixed except one accepted advisory)
-
-- **Where:** `frontend/package.json:35` (`@vitest/coverage-v8`), `:36` (`eslint`), `:41` (`vitest`)
-- **Evidence:** The first audit used `--omit=dev`. A full `npm audit` after the M1 fix reports 22 dev-only advisories: 2 critical, 20 moderate.
-  - Critical: `vitest` and `tinypool`. Advisory titles include "Prototype Pollution Gadget to RCE" and "Path Traversal / Arbitrary File Read via @vitest/mocker Redirect Mock". The fix is `vitest` 5, a major version up from 3.
-  - Moderate: the ESLint chain, mostly through `minimatch`, plus `glob` and `test-exclude` through `@vitest/coverage-v8`. npm's suggested fixes are `eslint@4.0.0` and `eslint-config-next@0.2.4`. Those are old downgrades. Do not apply them.
-- **Context:** These packages run only during tests and linting, not in the app.
-- **Done:** Upgraded `vitest` and `@vitest/coverage-v8` to 5.0.5. That clears both critical advisories, the two `@vitest/mocker` advisories and the `glob` advisory.
-- **Accepted:** `minimatch` "potential denial of service via globparts amplification" (affected range `<11.0.1`). Installed copies are 3.1.5, 9.0.9 and 10.2.6. They come from `@eslint/eslintrc`, `@eslint/config-array`, `eslint-plugin-import`, `eslint-plugin-react`, `eslint-plugin-jsx-a11y`, `@typescript-eslint/typescript-estree` and `glob`. The latest release of each (as of 2026-11-01, including `eslint` 10.14.0) still depends on `minimatch` ^3 or ^10, so no upgrade fixes it. Forcing 11 with an npm override would break the ^3 users, which call `minimatch` as a function. The advisory needs an attacker-supplied glob pattern. Here the only patterns come from this repo's own lint config, and the code runs only during linting.
-- **Recheck:** Run `npm audit` after each ESLint or plugin release, and remove the acceptance once a fixed version is available.
-
-### M4. Screen-reader instructions were not linked to cards (new, fixed)
-
-- **Where:** `frontend/src/components/KanbanBoard.tsx`, the `DndContext`
-- **Evidence:** The dev server logged a hydration mismatch on every page load, before and after the M2 change: `aria-describedby` was `DndDescribedBy-1` on the server and `DndDescribedBy-0` in the browser. React keeps the server value, so in the browser each card pointed to `DndDescribedBy-1`, an element that did not exist. Screen readers therefore had no instructions to read.
-- **Action:** Give `DndContext` a fixed `id`, so the server and browser generate the same value.
-
-## Low
-
-### L1. Test type errors (fixed)
-
-`tsc --noEmit` reported 17 errors: `TS2304` and `TS2582` for `describe`, `it` and `expect`, in `src/lib/kanban.test.ts` and `src/components/KanbanBoard.test.tsx`. Vitest runs with `globals: true`, but `src/test/vitest.d.ts` referenced `vitest`, not `vitest/globals`. On Next 16.1.6 the build was not affected. On 16.4.3 these errors fail `next build`, so this was fixed as part of M1. The vitest 5 upgrade in M3 needed a further change to the same file (see Fix log).
-
-### L2. Generated files are tracked, linted or counted
-
-- `frontend/test-results/.last-run.json` is committed. Add `/test-results/` to `frontend/.gitignore` and remove the file from git.
-- ESLint scans `coverage/`. After a coverage run, lint reported a warning in `coverage/block-navigation.js`. Add `"coverage/**"` to `globalIgnores` in `eslint.config.mjs`.
-- The coverage report includes `next.config.ts`, `playwright.config.ts` and `postcss.config.mjs` at 0%, because `vitest.config.ts` has no `coverage.include`. Add `include: ["src/**/*.{ts,tsx}"]`.
-
-### L3. Column title can be empty
-
-`KanbanColumn.tsx:44` saves every keystroke, and nothing stops an empty title. The column and the header chip then show no name (from code). This matters more after Part 7. The previous build sent every keystroke to the API, and the API rejected empty titles, which caused rename bugs (see the rebuild checklist). Keep edits local and save on blur or Enter, skipping empty values.
-
-### L4. Drop position between columns
-
-`moveCard` (`kanban.ts:144-151`) puts a card dropped on another column's card above that card. The only way to drop at the bottom of a non-empty column is the empty space below the last card. The board does not show where the card will land until you drop it, because there is no `onDragOver` handler (from code). Fine for the demo. Revisit if users find it awkward.
-
-### L5. Small cleanups
-
-`useMemo(() => board.cards, [board.cards])` at `KanbanBoard.tsx:28` returns the same object it is given, so remove it. `data-testid` values double up the prefix (`card-card-1`, `column-col-review`), because the ids already carry it.
-
-## Plan status (not defects)
-
-- Part 1 asks for `frontend/AGENTS.md`. It did not exist at review time. An untracked copy appeared while the fixes were in progress, and it is not covered by this review. `backend/AGENTS.md` and `scripts/AGENTS.md` are empty files.
-- Part 3 needs `output: "export"` in `next.config.ts`, which is currently empty.
-- `AGENTS.md` says the API key is in `.env` at the project root. There is no `.env` in this checkout. The root `.gitignore` covers it (line 130).
-
-## Rebuild checklist (from the review of `5facb0a`)
-
-Each item below was reproduced in the previous build. Build them right the first time.
-
-| Part | Do this | Previous bug |
-|---|---|---|
-| 2 | Use a Node 22 or later image for the frontend build stage (for example `node:24-slim`). vitest 5 requires Node `^22.12.0 \|\| ^24.0.0 \|\| >=26.0.0` | The previous Dockerfile used `node:20-slim` |
-| 2 | Bind Docker to `127.0.0.1:8000:8000` and mount a volume for the SQLite file | The app listened on all interfaces. The database was deleted on every restart. |
-| 3 | Serve static files with `StaticFiles(directory=..., html=True)`, or reject any path that resolves outside the folder. Add a test with `..` | `GET /../.env` returned files outside the web folder |
-| 6 | Open SQLite with `check_same_thread=False` when using a sync `get_db` dependency. Add a parallel-request test | 8 of 10 overlapping requests returned 500 |
-| 6 | Remove the card from its column before computing the target list on a same-column move. Test moving up and down | Moving up did nothing. Moving down put the card one slot short. |
-| 6, 9 | Put create, move and delete card in one module, used by both the API and the AI | The same logic was copied 5 times, and the move bug was in both copies |
-| 6 | Use a pytest fixture that sets the database path with `monkeypatch` and creates tables per test | Tests depended on run order and wrote to the real database |
-| 7 | Refresh the board in the background. Show the loading screen only on first load | Every edit flashed the loading screen and wiped the chat draft |
-| 7 | Save column renames on blur or Enter, and skip empty titles | Clearing "Backlog" and typing "Todo" saved "BacklogTodo" |
-| 9 | Catch Pydantic `ValidationError`. Accept or strip `card-`/`col-` id prefixes. Return only the actions that were applied | Bad model output returned 500. The chat said "Deleted it." for a card that did not exist. |
-| 9 | Send the board once as compact JSON, and cap history length | The board was sent twice per call, with unbounded history |
-| 10 | Pick the chat label color by role | "Assistant" label was white on a white bubble |
+| M1 | Schema step 2 adds `boards.version`. Every board change adds one to it, and every board the API returns includes it. `KanbanBoard.show` drops any board with a lower version than the one on screen. Saves, reloads and chat replies all go through it. Recorded as Part 11 in `docs/PLAN.md`. | 4 new backend tests and 1 new unit test. Each of three deliberate breaks failed at least one of them. Full retest: backend 114 passed (live included), lint and type check clean, unit 50 passed, browser 18 passed (live included). The app on port 8000 upgraded the `pm-data` database to schema version 2 and kept its board. |
 
 ## Action list
 
-| # | Action | Findings | Status |
-|---|---|---|---|
-| 1 | Upgrade `next` and `eslint-config-next` to 16.4.3, run `npm audit fix`, rerun tests | M1, L1 | Done |
-| 2 | Add `KeyboardSensor` with `sortableKeyboardCoordinates`, and a fixed `DndContext` id | M2, M4 | Done |
-| 3 | Upgrade `vitest` and `@vitest/coverage-v8` to 5. Accept the `minimatch` advisory until upstream fixes it | M3 | Done |
-| 4 | Ignore `test-results/` and `coverage/`. Set `coverage.include` | L2 | Open |
-| 5 | Small cleanups | L5 | Done in Part 7 |
-| 6 | Start Part 1 of `docs/PLAN.md`. Use the rebuild checklist when writing the detailed plan | Plan status, checklist | Open |
+| # | Action | Finding | Severity | Status |
+|---|---|---|---|---|
+| 1 | Drop board replies older than the board on screen, using a version the server raises on every change | M1 | Medium | Done 2026-11-21 |
+| 2 | Skip AI `update` and `move` actions that change no field, with a reason, and add tests | L1 | Low | Open |
+| 3 | Decide whether a move to the card's own column with no position should do nothing | L2 | Low | Open |
+| 4 | Bump `next` and `eslint-config-next` to 16.4.6, run `uv lock --upgrade`, rerun all tests | L4 | Low | Open |
+| 5 | Ignore `test-results/` and `coverage/`, untrack `.last-run.json`, set `coverage.include` | L5 | Low | Open |
+| 6 | Record that sign-out does not revoke the cookie, and revisit before the app leaves localhost | L3 | Low | Open |
+| 7 | Later: a drag handle for cards, and a drop preview between columns | L6, L7 | Low | Open |
 
-L3 and L4 can wait until Part 7, when the frontend starts calling the backend.
+2 to 5 can go in one change.
+
+## Severity scale
+
+| Severity | Meaning |
+|---|---|
+| Critical | Data loss, a security hole others can reach, or the app cannot be used. Fix now. |
+| High | A main feature behaves wrongly with no workaround, or a security risk that must be fixed before the next release. |
+| Medium | Wrong behavior that corrects itself or has a workaround. Fix soon. |
+| Low | Edge cases, maintenance, docs, and risks accepted for a local single-user MVP. |
+
+## Critical
+
+None.
+
+## High
+
+None.
+
+## Medium
+
+### M1. An older save reply can overwrite a newer one on screen (fixed)
+
+- **Where (at review time):** `frontend/src/components/KanbanBoard.tsx:67-80` (`save`), and `:252` (chat replies through `onBoard`)
+- **What happens:** every save shows the change, sends the request, then replaces the whole board with the server's reply. Nothing checks which request a reply belongs to. If reply A arrives after reply B, the screen shows the board as it was after A, without B's change.
+- **Evidence:** a temporary Vitest probe (deleted) renamed a column, held that reply back, edited a card title to "Second", and let that reply return. Then it released the rename reply, which held the board from before the edit. The card went back to "First" on screen, while the server had "Second". The comment at `KanbanBoard.tsx:65-66` said "the screen always ends up matching the database". That claim did not hold when saves overlapped.
+- **Already known, in part:** `docs/PLAN.md` (end of Part 10, removed by the fix) said: "Known limit, not fixed: if a chat reply and a board save reach the browser at almost the same time, the one that arrives last decides what the screen shows until the next change or reload. The database is right either way." The probe used two board saves and no chat, so the limit is wider than recorded. It needs two board edits whose replies come back out of order. The probe forced that order. I did not measure how often it happens on the real app.
+- **Effect:** the database is correct. The screen is wrong until the next save or reload. From code, not reproduced: a drag made from the wrong screen sends a position computed from the wrong card order, and a chat reply that returns while you edit the board can overwrite the edit on screen in the same way.
+- **Action as first written:** a request counter in the browser, where a reply is applied only if its request is the newest. Not used. A chat request is sent first but its board is read last, so a counter would drop the AI's changes if you edit the board while it is thinking. The browser cannot know the order of changes. Only the server can.
+- **Fixed, 2026-11-21:** the server raises `boards.version` on every change and returns it with every board. `KanbanBoard.show` drops a board with a lower version than the one on screen. The probe is now the unit test "keeps a newer reply when an older one arrives after it". The known-limit note is gone from `docs/PLAN.md`, and the code comment now describes the check. See "Fix log".
+
+## Low
+
+### L1. AI actions that change nothing count as applied
+
+- **Where:** `backend/app/chat.py:71-76`
+- **Evidence:** a probe sent `update` with only `card_id`, and `move` with only `card_id`. The response had both in `applied`, none in `skipped`, and the board was unchanged. `CardUpdate` with no fields is valid, and `update_card` then changes no card. Since the M1 fix, it still raises the board's version.
+- **Effect:** the AI's reply can say it changed a card, and no note appears under it, because the frontend only notes skipped actions. The previous rebuild checklist asked to "return only the actions that were applied" for this reason.
+- **Action:** in `_apply`, raise a skip reason when an `update` has neither title nor details, or a `move` has neither column nor position. Add one test for each.
+
+### L2. A move to the card's own column with no position sends it to the bottom
+
+- **Where:** `backend/app/board.py:203-209`
+- **Evidence:** a probe sent `PATCH /api/cards/1` with `{"column_id": 1}`, which is card 1's own column. Backlog went from `[1, 2]` to `[2, 1]`. `backend/AGENTS.md:48` documents "Moving with only `column_id` puts it last". It does not say this also applies within the same column.
+- **Effect:** the frontend always sends a position, so only the AI can trigger it, for example "move card 1 to Backlog" when it is already there.
+- **Action:** my lean is to treat it as no change when the column is the same and no position is given. Otherwise, document it in `backend/AGENTS.md`.
+
+### L3. Sign-out does not end the session on the server
+
+- **Where:** `backend/app/main.py:32-37`, `backend/app/auth.py:57-60`
+- **Evidence:** a probe saved the cookie, signed out, and sent the old cookie again. `/api/me` returned 200. The cookie is `Max-Age=1209600` (14 days), httpOnly, `SameSite=Lax`, and has no `Secure` flag. `backend/AGENTS.md:57` already says "The server stores nothing".
+- **Effect:** someone who copies the cookie can keep using it after sign-out. For one user on localhost over plain HTTP, this is acceptable.
+- **Action:** none in code for the MVP. Before the app runs anywhere other than localhost, store sessions server-side or shorten `max_age`, and set `https_only=True`.
+
+### L4. Dependencies
+
+- `npm audit --omit=dev`: 1 moderate, `next` 16.4.3. Its 7 advisories cover caching (`use cache`, Cache Components), image optimization, Edge runtime routes and self-hosted servers that forward fetched responses. The app is a static export and uses none of these. The fix is 16.4.6, a patch release.
+- Full `npm audit`: 8 moderate. One is `next`, and the other 7 are the `minimatch` chain under `typescript-eslint`, accepted in the previous review. No high or critical.
+- Python: `fastapi` 0.162.0 (latest 0.165.0), `openai` 3.42.1 (latest 3.57.0), `httpx2` 2.16.0 (latest 2.16.2). I could not run a Python vulnerability audit (see "Not checked").
+- **Action:** set `next` and `eslint-config-next` to 16.4.6. Run `uv lock --upgrade` in `backend/`. Rerun all tests. `AGENTS.md` asks for the latest versions.
+
+### L5. Generated files are tracked or linted (open from the previous review)
+
+- `frontend/test-results/.last-run.json` is committed, and neither `.gitignore` covers `test-results/`.
+- `eslint.config.mjs` does not ignore `coverage/`, so lint scans the coverage report after a coverage run.
+- `vitest.config.ts` has no `coverage.include`, so config files count toward coverage at 0%.
+- **Action:** add `/test-results/` to `frontend/.gitignore` and run `git rm --cached frontend/test-results/.last-run.json`. Add `"coverage/**"` to `globalIgnores`. Add `include: ["src/**/*.{ts,tsx}"]` under `coverage`.
+
+### L6. Each card is a button with buttons inside it
+
+- **Where:** `frontend/src/components/KanbanCard.tsx:50-66`
+- **Evidence (from code):** `useSortable` gives the `article` `role="button"`. Inside it are the edit buttons, the edit fields and Remove. `frontend/AGENTS.md` describes the same structure: "A card is a button named after its title. Inside it: `Edit <title>` ... `Delete <title>`". The axe-core accessibility checker flags this pattern with its `nested-interactive` rule.
+- **Action:** next time accessibility gets attention, move drag activation to a small handle button and drop the role from the `article`. The keyboard tests in `kanban.spec.ts` will catch regressions.
+
+### L7. No drop preview between columns (open from the previous review)
+
+There is still no `onDragOver` handler. A card dragged to another column shows no gap until it is dropped. The only way to drop at the bottom of a non-empty column is the empty space below its last card. Revisit if users find it awkward.
+
+## In good shape
+
+- **Board changes:** every change goes through `board.py` inside one `BEGIN IMMEDIATE` transaction. Ids are checked before any write. The chat applies several actions in one transaction and skips bad ones. Tests cover ownership (`test_board.py:254`, `test_chat.py:279`) and parallel requests (`test_board.py:280`).
+- **AI failure handling:** every OpenRouter failure becomes a 502, and a missing key becomes a 503. Bad model output cannot cause a 500. The AI call runs outside the transaction (`test_chat.py:303`).
+- **Static serving:** `StaticFiles(html=True)` with a traversal test (`test_main.py:42`).
+- **Cross-site requests:** a probe sent a `text/plain` POST, the type a plain HTML form can send, and got 422. With `SameSite=Lax`, a form on another site cannot make changes.
+- **Docker:** runs as a non-root user, binds to `127.0.0.1`, keeps data in the `pm-data` volume, and has a health check. `.env` is excluded from the build.
+- **Docs:** `backend/AGENTS.md`, `frontend/AGENTS.md`, `scripts/AGENTS.md` and `docs/DATABASE.md` match the code. The only gap is the same-column case in L2. The code comment quoted in M1 was wrong at review time and has since been corrected. Input limits match on both sides: titles 200, details 2,000, message 2,000, history 20 of 4,000.
+
+## Previous review status
+
+| Item | Status | Evidence |
+|---|---|---|
+| M1 to M4, L1, L5 | Fixed before this review | See git history of this file |
+| L2 generated files | Open | L5 here |
+| L3 empty column title | Fixed | `KanbanColumn.tsx:51-58`, test "does not save an empty column title" |
+| L4 drop position | Open | L7 here |
+
+Rebuild checklist from the review of `5facb0a`:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Node 22+ build image | Done | `Dockerfile:3` (`node:24-slim`) |
+| Bind to `127.0.0.1`, data volume | Done | `scripts/start-mac.sh:13-14` |
+| No files served from outside the web folder | Done | `main.py:74-78`, `test_main.py:42` |
+| `check_same_thread=False`, parallel test | Done | `db.py:44`, `test_board.py:280` |
+| Same-column move removes the card first | Done | `board.py:204-208`, `test_board.py:149` |
+| One module for board changes | Done | `board.py`, used by `chat.py` |
+| Database fixture per test | Done | `conftest.py:18-23` |
+| Refresh in background, loading screen only once | Done | `KanbanBoard.tsx:90-96` |
+| Column rename on blur or Enter, skip empty | Done | `KanbanColumn.tsx:51-60` |
+| Catch `ValidationError`, return applied actions only | Mostly done | `chat.py:107-109`. L1 is the remaining gap |
+| Board sent once, history capped | Done | `chat.py:32,92`, `test_chat.py:77` |
+| Chat label color by role | Done | `ChatSidebar.tsx:117-122` |
+
+The checklist also asked to accept or strip `card-` and `col-` id prefixes. Ids are integers in the AI's output schema, so a prefixed id cannot reach the code.
+
+## What I checked
+
+| Check | Result |
+|---|---|
+| Read every tracked source, test, config, script and doc file, except lock files | Done |
+| `uv run --env-file ../.env pytest` | 110 passed, 0 skipped |
+| `npm run lint` | Clean |
+| `npx tsc --noEmit` | 0 errors |
+| `npm run test:unit` | 49 passed |
+| `npm run test:e2e` with the key | 18 passed |
+| Start script, smoke test of `/`, login, `/api/me`, `/api/board`, stop script | All 200. No containers left, `pm-data` kept |
+| `npm audit`, `npm outdated`, `uv tree --outdated` | See L4 |
+| Backend probes (scratchpad, not in repo) | Confirmed L1, L2, L3 and the cross-site result |
+| Frontend race probe (temporary file, deleted) | Confirmed M1 |
+
+Findings marked "from code" were read, not reproduced.
+
+## Not checked
+
+- Python vulnerability audit. The `pip-audit` run was blocked by a permission check in this session.
+- The Windows scripts. They have never been run, as `scripts/AGENTS.md` says.
+- How the app looks in a real browser. Only the Playwright tests drove it.
+- The quality of the AI's answers beyond the single live test.

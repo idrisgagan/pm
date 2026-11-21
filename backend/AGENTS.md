@@ -26,10 +26,10 @@ tests/
                    test, so cookies never carry over) and signed_in_client.
   fixtures/        A small fake frontend build, plus secret.txt outside it for traversal tests.
   test_auth.py     Sign-in, sign-out, session and cookie tests.
-  test_board.py    Board routes: seed, rename, create, edit, move, delete, validation, ownership, parallel requests.
+  test_board.py    Board routes: seed, rename, create, edit, move, delete, validation, version, ownership, parallel requests.
   test_ai.py       The OpenRouter client against a fake OpenRouter: request shape, errors, unreadable output.
   test_chat.py     /api/chat: limits, prompt, each action applied or skipped, plus one live test skipped without a key.
-  test_db.py       Schema matches docs/schema.json, schema steps, foreign keys.
+  test_db.py       Schema matches docs/schema.json, schema steps (including a version 1 file upgrading), foreign keys.
   test_main.py     Tests for health, the /api catch-all and static serving.
   test_schema.py   Checks docs/schema.json (see docs/DATABASE.md).
 pyproject.toml     Dependencies and pytest settings.
@@ -42,7 +42,7 @@ uv.lock            Locked versions. Commit it with any dependency change.
 - `POST /api/login`: body `{"username", "password"}`. The MVP credentials are `user` / `password`. Success returns `{"username"}` and sets the `pm_session` cookie. Failure returns 401 `Invalid username or password`, without saying which field was wrong.
 - `POST /api/logout`: clears the session. Returns 204.
 - `GET /api/me`: `{"username"}` when signed in, otherwise 401 `Not signed in`.
-- `GET /api/board`: the signed-in user's board, created from the seed data on first read. Shape: `{"columns": [{"id", "title", "cards": [{"id", "title", "details"}]}]}`, columns and cards in order.
+- `GET /api/board`: the signed-in user's board, created from the seed data on first read. Shape: `{"version", "columns": [{"id", "title", "cards": [{"id", "title", "details"}]}]}`, columns and cards in order. `version` goes up by one with every change, and a failed change leaves it alone (see `docs/DATABASE.md`).
 - `PATCH /api/columns/{id}`: body `{"title"}`. Renames a column.
 - `POST /api/cards`: body `{"column_id", "title", "details"?}`. Adds a card at the end of the column. Returns 201.
 - `PATCH /api/cards/{id}`: any of `{"title", "details", "column_id", "position"}`. Edits or moves a card. Moving with only `column_id` puts it last, and a position past the end also puts it last.
@@ -66,6 +66,7 @@ See `docs/DATABASE.md` for the tables and the rules. In code:
 
 - Routes get a connection with `Depends(db.get_connection)`. It is opened per request and closed after.
 - Open the user's board with `with board.open_board(conn, username) as board_id:`. It runs one `db.transaction` and yields the board id. Inside it, call `board.rename_column`, `create_card`, `update_card` or `delete_card`, then `board.read` for the result. The change functions do not open transactions of their own, so the AI chat can apply several in one. Call them rather than writing new SQL in routes, so the AI and the API change the board the same way.
+- Every change function ends with `_changed(conn, board_id)`, which raises the board's `version`. A new change function must call it too. Otherwise its reply has the same version as the board before it, and that older board can replace it on screen.
 - A change function checks ids before it writes, so one that raises `NotFound` has changed nothing. The AI chat depends on this: it catches `NotFound` inside the transaction and carries on.
 - To change the schema, add a step to `db.MIGRATIONS`. Never edit a step that has shipped.
 - `board.NotFound` becomes a 404 through the handler in `main.py`.
@@ -80,7 +81,7 @@ See `docs/DATABASE.md` for the tables and the rules. In code:
 The chat route (`chat.py`):
 
 - Reads the board, then calls the AI outside any transaction, so a slow answer does not hold the database lock.
-- Prompt: a system message with short instructions and the board once as compact JSON, then `history`, then `message`.
+- Prompt: a system message with short instructions and the board once as compact JSON without its `version`, then `history`, then `message`.
 - The AI returns `{"reply", "actions"}`. Each action has `type` (`create`, `update`, `move` or `delete`) and `card_id`, `column_id`, `title`, `details`, `position`, with unused fields null. Ids are the numbers in the board JSON.
 - Actions are applied in order in one transaction, through the `board.py` change functions. An action whose card or column is not on the user's board, or that fails the board's own checks (title length, position below 0), is skipped with a reason, and the rest still apply.
 - The response lists `applied` actions, `skipped` actions with `reason`, and the updated `board`.

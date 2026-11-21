@@ -8,7 +8,7 @@ const mockApi = (routes: Record<string, number>) =>
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const path = String(input);
     const status = routes[path] ?? (path === "/api/board" ? 200 : 404);
-    const body = path === "/api/board" ? { columns: [] } : { username: "user" };
+    const body = path === "/api/board" ? { version: 0, columns: [] } : { username: "user" };
     return new Response(status === 200 ? JSON.stringify(body) : null, { status });
   });
 

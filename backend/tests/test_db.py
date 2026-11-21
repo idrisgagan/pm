@@ -57,6 +57,24 @@ def test_failed_step_leaves_the_previous_version(
     with pytest.raises(sqlite3.OperationalError):
         db.init()
     with sqlite3.connect(database) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone() == (1,)
+        assert conn.execute("PRAGMA user_version").fetchone() == (SCHEMA["version"],)
         tables = {name for (name,) in conn.execute("SELECT name FROM sqlite_master")}
         assert "extra" not in tables
+
+
+def test_version_1_file_upgrades_and_keeps_its_boards(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", db.MIGRATIONS[:1])
+        db.init()
+    conn = db.connect()
+    conn.execute("INSERT INTO users (username) VALUES ('user')")
+    conn.execute("INSERT INTO boards (user_id) VALUES (1)")
+    conn.close()
+
+    db.init()
+
+    with sqlite3.connect(database) as conn:
+        assert conn.execute("PRAGMA user_version").fetchone() == (2,)
+        assert conn.execute("SELECT user_id, version FROM boards").fetchall() == [(1, 0)]
