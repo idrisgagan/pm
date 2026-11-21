@@ -275,3 +275,24 @@ Tests:
 - [x] The app on port 8000 upgraded the existing `pm-data` database to schema version 2 and kept its board
 
 Success criteria: a reply that arrives after a newer one no longer changes the screen, and all tests pass. Met.
+
+## Part 12: Backend layers
+
+Goal: separate the HTTP layer from the backend logic. `main.py` was already short (78 lines) and only wired things together, but `board.py`, `chat.py` and `auth.py` each mixed routes with logic. Behavior and URLs stay the same.
+
+- [x] `app/api/` package for routes: `__init__.py` (the `/api` router, `/api/health`, each area's router, then the catch-all, last), `deps.py` (`Username`, `Connection`), `auth.py`, `board.py`, `chat.py`
+- [x] Logic modules keep their names, so callers and tests are unchanged: `board.py` (models and change functions), `chat.py` (prompt, models, `respond()`), `auth.py` (`check_credentials`). None of them import FastAPI
+- [x] `config.py` (`STATIC_DIR`, `session_secret`) and `errors.py` (exception handlers) come out of `main.py`, which now only wires things together
+- [x] Found while moving `auth.py`: a non-ASCII username or password gave a 500, because `secrets.compare_digest` raises on non-ASCII strings. Compared as UTF-8 bytes now, so it gets a 401. Recorded as L8 in `docs/code_review.md`
+- [x] Update `backend/AGENTS.md` and `CLAUDE.md`
+
+Tests:
+- [x] No existing test changed. All backend tests pass against the new layout: 116 with the live test, which includes 2 new sign-in cases
+- [x] The OpenAPI schema matches the one from before the change, apart from the `/api` catch-all's generated operation id. That id varies from run to run before and after, because the route has five methods in a set
+- [x] Each module imports on its own. Only `main.py`, `errors.py` and `app/api/` import FastAPI
+- [x] The 2 new sign-in cases fail without the fix
+- [x] Lint, type check, 50 unit tests and 18 browser tests pass, including the live one
+- [x] The app on port 8000 starts with the start script, answers `/`, `/api/health`, sign-in and the board, gives 401 for a non-ASCII sign-in, and logs no errors
+
+Success criteria: routes and logic are in separate modules, the API behaves the same, and all tests pass. Met.
+

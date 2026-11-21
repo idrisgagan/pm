@@ -1,16 +1,14 @@
-"""Every read and change of a user's board. The API routes below and the AI
-chat in chat.py both go through these functions."""
+"""Every read and change of a user's board. The board routes in api/board.py
+and the AI chat in chat.py both go through these functions."""
 
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, StringConstraints
 
 from app import db
-from app.auth import current_user
 
 # The board every user starts with: five fixed columns and eight cards.
 SEED = [
@@ -217,42 +215,3 @@ def delete_card(conn: sqlite3.Connection, board_id: int, card_id: int) -> None:
     conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
     _renumber(conn, column_id, _card_ids(conn, column_id))
     _changed(conn, board_id)
-
-
-router = APIRouter(prefix="/api")
-
-Connection = Annotated[sqlite3.Connection, Depends(db.get_connection)]
-Username = Annotated[str, Depends(current_user)]
-
-
-@router.get("/board")
-def read_board(username: Username, conn: Connection) -> Board:
-    return get_board(conn, username)
-
-
-@router.patch("/columns/{column_id}")
-def patch_column(column_id: int, body: ColumnUpdate, username: Username, conn: Connection) -> Board:
-    with open_board(conn, username) as board_id:
-        rename_column(conn, board_id, column_id, body.title)
-        return read(conn, board_id)
-
-
-@router.post("/cards", status_code=201)
-def post_card(body: CardCreate, username: Username, conn: Connection) -> Board:
-    with open_board(conn, username) as board_id:
-        create_card(conn, board_id, body)
-        return read(conn, board_id)
-
-
-@router.patch("/cards/{card_id}")
-def patch_card(card_id: int, body: CardUpdate, username: Username, conn: Connection) -> Board:
-    with open_board(conn, username) as board_id:
-        update_card(conn, board_id, card_id, body)
-        return read(conn, board_id)
-
-
-@router.delete("/cards/{card_id}")
-def remove_card(card_id: int, username: Username, conn: Connection) -> Board:
-    with open_board(conn, username) as board_id:
-        delete_card(conn, board_id, card_id)
-        return read(conn, board_id)

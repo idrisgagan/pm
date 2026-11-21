@@ -26,7 +26,8 @@ def test_me_after_login(signed_in_client: TestClient) -> None:
 
 @pytest.mark.parametrize(
     "username, password",
-    [("user", "wrong"), ("wrong", "password"), ("", ""), ("USER", "password")],
+    [("user", "wrong"), ("wrong", "password"), ("", ""), ("USER", "password"),
+     ("usér", "password"), ("user", "pässwörd")],
 )
 def test_login_rejects_bad_credentials(client: TestClient, username: str, password: str) -> None:
     response = client.post("/api/login", json={"username": username, "password": password})

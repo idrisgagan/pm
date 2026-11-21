@@ -10,13 +10,14 @@ The app is in good shape. All tests pass: 110 backend, 49 unit, 18 browser, incl
 
 There are no Critical or High findings. There is one Medium: when two saves overlap, an older server reply can arrive last and put stale data back on screen. Part 10 of `docs/PLAN.md` recorded this as a known limit for a chat reply and a board save. A probe showed it also happens between two ordinary board saves, with no chat involved. The rest are Low.
 
-**Update, 2026-11-21:** M1 is fixed. See "Fix log". All Low items are still open.
+**Update, 2026-11-21:** M1 is fixed. L8, found later the same day during the backend refactor (Part 12 in `docs/PLAN.md`), is also fixed. See "Fix log". L1 to L7 are still open.
 
 ## Fix log
 
 | Finding | Change | Verified by |
 |---|---|---|
 | M1 | Schema step 2 adds `boards.version`. Every board change adds one to it, and every board the API returns includes it. `KanbanBoard.show` drops any board with a lower version than the one on screen. Saves, reloads and chat replies all go through it. Recorded as Part 11 in `docs/PLAN.md`. | 4 new backend tests and 1 new unit test. Each of three deliberate breaks failed at least one of them. Full retest: backend 114 passed (live included), lint and type check clean, unit 50 passed, browser 18 passed (live included). The app on port 8000 upgraded the `pm-data` database to schema version 2 and kept its board. |
+| L8 | `auth.check_credentials` compares UTF-8 bytes instead of strings. | 2 new cases in `test_auth.py`, which fail without the fix. On the running app, a non-ASCII sign-in returned 401. |
 
 ## Action list
 
@@ -29,6 +30,7 @@ There are no Critical or High findings. There is one Medium: when two saves over
 | 5 | Ignore `test-results/` and `coverage/`, untrack `.last-run.json`, set `coverage.include` | L5 | Low | Open |
 | 6 | Record that sign-out does not revoke the cookie, and revisit before the app leaves localhost | L3 | Low | Open |
 | 7 | Later: a drag handle for cards, and a drop preview between columns | L6, L7 | Low | Open |
+| 8 | Compare sign-in credentials as bytes, so non-ASCII input gets 401 instead of 500 | L8 | Low | Done 2026-11-21 |
 
 2 to 5 can go in one change.
 
@@ -65,21 +67,21 @@ None.
 
 ### L1. AI actions that change nothing count as applied
 
-- **Where:** `backend/app/chat.py:71-76`
+- **Where:** `backend/app/chat.py:66-71`
 - **Evidence:** a probe sent `update` with only `card_id`, and `move` with only `card_id`. The response had both in `applied`, none in `skipped`, and the board was unchanged. `CardUpdate` with no fields is valid, and `update_card` then changes no card. Since the M1 fix, it still raises the board's version.
 - **Effect:** the AI's reply can say it changed a card, and no note appears under it, because the frontend only notes skipped actions. The previous rebuild checklist asked to "return only the actions that were applied" for this reason.
 - **Action:** in `_apply`, raise a skip reason when an `update` has neither title nor details, or a `move` has neither column nor position. Add one test for each.
 
 ### L2. A move to the card's own column with no position sends it to the bottom
 
-- **Where:** `backend/app/board.py:203-209`
+- **Where:** `backend/app/board.py:201-207`
 - **Evidence:** a probe sent `PATCH /api/cards/1` with `{"column_id": 1}`, which is card 1's own column. Backlog went from `[1, 2]` to `[2, 1]`. `backend/AGENTS.md:48` documents "Moving with only `column_id` puts it last". It does not say this also applies within the same column.
 - **Effect:** the frontend always sends a position, so only the AI can trigger it, for example "move card 1 to Backlog" when it is already there.
 - **Action:** my lean is to treat it as no change when the column is the same and no position is given. Otherwise, document it in `backend/AGENTS.md`.
 
 ### L3. Sign-out does not end the session on the server
 
-- **Where:** `backend/app/main.py:32-37`, `backend/app/auth.py:57-60`
+- **Where:** `backend/app/main.py:23-28`, `backend/app/api/auth.py:31-34`
 - **Evidence:** a probe saved the cookie, signed out, and sent the old cookie again. `/api/me` returned 200. The cookie is `Max-Age=1209600` (14 days), httpOnly, `SameSite=Lax`, and has no `Secure` flag. `backend/AGENTS.md:57` already says "The server stores nothing".
 - **Effect:** someone who copies the cookie can keep using it after sign-out. For one user on localhost over plain HTTP, this is acceptable.
 - **Action:** none in code for the MVP. Before the app runs anywhere other than localhost, store sessions server-side or shorten `max_age`, and set `https_only=True`.
@@ -108,6 +110,13 @@ None.
 
 There is still no `onDragOver` handler. A card dragged to another column shows no gap until it is dropped. The only way to drop at the bottom of a non-empty column is the empty space below its last card. Revisit if users find it awkward.
 
+### L8. A non-ASCII username or password caused a 500 (found later, fixed)
+
+- **Where:** `backend/app/auth.py` (at the time: `backend/app/auth.py:48-49`, in the login route)
+- **Evidence:** found while moving the sign-in check during the backend refactor. Before the change, a test client sent `usér` and `用户` as usernames with a wrong password, and each got 500 instead of 401. `secrets.compare_digest` raises `TypeError` for non-ASCII strings.
+- **Effect:** no data or security impact. From code, not tried in the browser: the sign-in form shows "Could not reach the server. Try again." for any status other than 401, so someone who typed an accented character saw that instead of "Invalid username or password."
+- **Fixed, 2026-11-21:** compare UTF-8 bytes, which `compare_digest` accepts. See "Fix log".
+
 ## In good shape
 
 - **Board changes:** every change goes through `board.py` inside one `BEGIN IMMEDIATE` transaction. Ids are checked before any write. The chat applies several actions in one transaction and skips bad ones. Tests cover ownership (`test_board.py:254`, `test_chat.py:279`) and parallel requests (`test_board.py:280`).
@@ -132,15 +141,15 @@ Rebuild checklist from the review of `5facb0a`:
 |---|---|---|
 | Node 22+ build image | Done | `Dockerfile:3` (`node:24-slim`) |
 | Bind to `127.0.0.1`, data volume | Done | `scripts/start-mac.sh:13-14` |
-| No files served from outside the web folder | Done | `main.py:74-78`, `test_main.py:42` |
+| No files served from outside the web folder | Done | `main.py:35-39`, `test_main.py:42` |
 | `check_same_thread=False`, parallel test | Done | `db.py:44`, `test_board.py:280` |
-| Same-column move removes the card first | Done | `board.py:204-208`, `test_board.py:149` |
-| One module for board changes | Done | `board.py`, used by `chat.py` |
+| Same-column move removes the card first | Done | `board.py:202-206`, `test_board.py:149` |
+| One module for board changes | Done | `board.py`, used by `chat.py` and `api/board.py` |
 | Database fixture per test | Done | `conftest.py:18-23` |
 | Refresh in background, loading screen only once | Done | `KanbanBoard.tsx:90-96` |
 | Column rename on blur or Enter, skip empty | Done | `KanbanColumn.tsx:51-60` |
-| Catch `ValidationError`, return applied actions only | Mostly done | `chat.py:107-109`. L1 is the remaining gap |
-| Board sent once, history capped | Done | `chat.py:32,92`, `test_chat.py:77` |
+| Catch `ValidationError`, return applied actions only | Mostly done | `chat.py:100-102`. L1 is the remaining gap |
+| Board sent once, history capped | Done | `chat.py:85`, `api/chat.py:14`, `test_chat.py:77` |
 | Chat label color by role | Done | `ChatSidebar.tsx:117-122` |
 
 The checklist also asked to accept or strip `card-` and `col-` id prefixes. Ids are integers in the AI's output schema, so a prefixed id cannot reach the code.

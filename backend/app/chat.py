@@ -1,13 +1,13 @@
-"""The AI chat route. The AI sees the board and the conversation, replies, and
-can change cards through the same board functions the API uses."""
+"""The AI chat. The AI sees the board and the conversation, replies, and can
+change cards through the same board functions the board routes use. The
+route is in api/chat.py."""
 
+import sqlite3
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field, StringConstraints, ValidationError
+from pydantic import BaseModel, StringConstraints, ValidationError
 
 from app import ai, board
-from app.board import Connection, Username
 
 INSTRUCTIONS = """You help the user manage their Kanban board. The board is below as JSON.
 Answer the user's message in `reply`. When they ask for changes to cards, list them in `actions`, in order:
@@ -25,11 +25,6 @@ Board:
 class Message(BaseModel):
     role: Literal["user", "assistant"]
     content: Annotated[str, StringConstraints(max_length=4000)]
-
-
-class ChatRequest(BaseModel):
-    message: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
-    history: list[Message] = Field(default=[], max_length=20)
 
 
 class Action(BaseModel):
@@ -58,7 +53,7 @@ class ChatResponse(BaseModel):
     board: board.Board
 
 
-def _apply(conn: Connection, board_id: int, action: Action) -> None:
+def _apply(conn: sqlite3.Connection, board_id: int, action: Action) -> None:
     # Only the fields the action uses, so the board models' own checks
     # (title length, position >= 0, required ids) decide what is valid.
     def fields(*names: str) -> dict:
@@ -78,11 +73,9 @@ def _apply(conn: Connection, board_id: int, action: Action) -> None:
             board.delete_card(conn, board_id, action.card_id)
 
 
-router = APIRouter(prefix="/api")
-
-
-@router.post("/chat")
-def chat(body: ChatRequest, username: Username, conn: Connection) -> ChatResponse:
+def respond(
+    conn: sqlite3.Connection, username: str, message: str, history: list[Message]
+) -> ChatResponse:
     # Read, then call the AI outside any transaction, so a slow answer does
     # not hold the database lock. Ids are checked again when applied.
     current = board.get_board(conn, username)
@@ -90,8 +83,8 @@ def chat(body: ChatRequest, username: Username, conn: Connection) -> ChatRespons
         [
             # The version is for the frontend, not the AI.
             {"role": "system", "content": INSTRUCTIONS + current.model_dump_json(exclude={"version"})},
-            *(message.model_dump() for message in body.history),
-            {"role": "user", "content": body.message},
+            *(entry.model_dump() for entry in history),
+            {"role": "user", "content": message},
         ],
         AIOutput,
     )

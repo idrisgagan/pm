@@ -14,18 +14,26 @@ FastAPI app that serves the API under `/api` and the built frontend at `/`. It r
 
 ```
 app/
-  main.py          FastAPI app: session middleware, API routes, an /api catch-all, then the static mount at /.
-  auth.py          Sign-in routes, the current_user dependency, and the session secret.
+  main.py          Wiring only: database setup, session middleware, the API router, error handlers, then the static mount at /.
+  config.py        Settings from the environment: PM_STATIC_DIR and the session secret.
+  errors.py        Turns board.NotFound into 404, ai.NotConfigured into 503 and ai.AIError into 502.
   db.py            SQLite connections, transactions and schema steps. Creates the database at startup.
-  board.py         Seed data, every board read and change, and the /api/board, /api/columns and /api/cards routes.
+  auth.py          The sign-in check against the MVP credentials.
+  board.py         Board models, seed data, and every board read and change.
   ai.py            OpenRouter client: ask(messages, output) returns a reply parsed into a Pydantic model.
-  chat.py          The /api/chat route: prompt, AI output model, and applying the AI's actions.
+  chat.py          The AI chat: prompt, AI output model, and respond(), which applies the AI's actions.
+  api/             The HTTP layer. Only this package, main.py and errors.py import FastAPI.
+    __init__.py    The /api router: /api/health, each area's router, then the /api catch-all, last.
+    deps.py        Username (requires sign-in) and Connection (a database connection per request).
+    auth.py        /api/login, /api/logout, /api/me.
+    board.py       /api/board, /api/columns/{id}, /api/cards and /api/cards/{id}.
+    chat.py        /api/chat, with the request limits.
 tests/
   conftest.py      Points PM_STATIC_DIR at tests/fixtures/static before the app is imported.
                    Fixtures: database (a temp file per test, used automatically), client (new per
                    test, so cookies never carry over) and signed_in_client.
   fixtures/        A small fake frontend build, plus secret.txt outside it for traversal tests.
-  test_auth.py     Sign-in, sign-out, session and cookie tests.
+  test_auth.py     Sign-in (including non-ASCII input), sign-out, session and cookie tests.
   test_board.py    Board routes: seed, rename, create, edit, move, delete, validation, version, ownership, parallel requests.
   test_ai.py       The OpenRouter client against a fake OpenRouter: request shape, errors, unreadable output.
   test_chat.py     /api/chat: limits, prompt, each action applied or skipped, plus one live test skipped without a key.
@@ -55,30 +63,30 @@ uv.lock            Locked versions. Commit it with any dependency change.
 ## Sign-in
 
 - The session lives in a signed cookie, `pm_session`: httpOnly, `SameSite=Lax`, 14 days. The server stores nothing.
-- Protect a route by adding `username: str = Depends(current_user)` from `app/auth.py`. It returns 401 when there is no valid session.
-- The cookie is signed with `PM_SESSION_SECRET` from `.env`. If that is unset, the app logs a warning and uses a random secret, so every restart signs everyone out.
+- Protect a route by adding `username: Username` from `app/api/deps.py`. It returns 401 when there is no valid session.
+- The cookie is signed with `PM_SESSION_SECRET` from `.env`, read in `config.py`. If that is unset, the app logs a warning and uses a random secret, so every restart signs everyone out.
 
-Add new API routes above the `/api` catch-all in `main.py`. A route below it is never reached.
+Routes live in `app/api/`, and the logic they call lives in the modules above it. To add an area, write its router in `app/api/` and include it in `app/api/__init__.py` above the catch-all. A route below the catch-all is never reached.
 
 ## Database
 
 See `docs/DATABASE.md` for the tables and the rules. In code:
 
-- Routes get a connection with `Depends(db.get_connection)`. It is opened per request and closed after.
+- Routes get a connection by adding `conn: Connection` from `app/api/deps.py`. It is opened per request and closed after.
 - Open the user's board with `with board.open_board(conn, username) as board_id:`. It runs one `db.transaction` and yields the board id. Inside it, call `board.rename_column`, `create_card`, `update_card` or `delete_card`, then `board.read` for the result. The change functions do not open transactions of their own, so the AI chat can apply several in one. Call them rather than writing new SQL in routes, so the AI and the API change the board the same way.
 - Every change function ends with `_changed(conn, board_id)`, which raises the board's `version`. A new change function must call it too. Otherwise its reply has the same version as the board before it, and that older board can replace it on screen.
 - A change function checks ids before it writes, so one that raises `NotFound` has changed nothing. The AI chat depends on this: it catches `NotFound` inside the transaction and carries on.
 - To change the schema, add a step to `db.MIGRATIONS`. Never edit a step that has shipped.
-- `board.NotFound` becomes a 404 through the handler in `main.py`.
+- `board.NotFound` becomes a 404 through the handler in `errors.py`.
 
 ## AI
 
 - `ai.ask(messages, output)` sends the messages to `openai/gpt-oss-120b` through `https://openrouter.ai/api/v1` with JSON-schema structured output built from the Pydantic model `output`, and `provider: {"require_parameters": true}` so OpenRouter routes only to providers that support it. It returns the parsed model.
 - `OPENROUTER_API_KEY` is read on each call, so the app starts without it. Without it, AI routes return 503 "AI is not configured: OPENROUTER_API_KEY is not set."
-- Timeout is 30 seconds, and SDK retries are off. A timeout, a failed connection, a non-2xx reply from OpenRouter, or a reply that does not match the model raises `ai.AIError`, which `main.py` turns into a 502 with a short message.
+- Timeout is 30 seconds, and SDK retries are off. A timeout, a failed connection, a non-2xx reply from OpenRouter, or a reply that does not match the model raises `ai.AIError`, which `errors.py` turns into a 502 with a short message.
 - Tests fake OpenRouter with the `fake_openrouter` fixture and `completion()` helper in `tests/conftest.py`. The fixture sets `ai.http_client` to an `httpx2.Client` on a `MockTransport`, so the real SDK runs, including its error handling.
 
-The chat route (`chat.py`):
+The chat (`chat.respond`, called by the route in `api/chat.py`):
 
 - Reads the board, then calls the AI outside any transaction, so a slow answer does not hold the database lock.
 - Prompt: a system message with short instructions and the board once as compact JSON without its `version`, then `history`, then `message`.
