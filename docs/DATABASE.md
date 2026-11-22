@@ -29,7 +29,9 @@ cards    id  column_id  -> columns  title  details  position
 
 ## Version
 
-Every change function in `backend/app/board.py` ends by calling `_changed`, which adds one to `boards.version`. It runs after the function's checks, so a change that fails changes nothing, including the version. Reads leave the version alone, so two boards with the same version are the same board. Every board the API returns includes the version. The frontend uses it to drop a reply that arrives after a newer one. A new change function must call `_changed` too.
+Every change function in `backend/app/board.py` that writes something ends by calling `_changed`, which adds one to `boards.version`. It runs after the function's checks, so a change that fails changes nothing, including the version. A function that would write nothing returns before calling it: an empty card edit, a column renamed to its current title, and a move that only names the column the card is already in. Reads leave the version alone.
+
+The version counts changes, not content. Two boards with different versions can hold the same content, for example after a title is changed and changed back. Every board the API returns includes the version. The frontend uses it to drop a reply that arrives after a newer one, so only the order matters. A new change function must call `_changed` too.
 
 ## Seed data
 

@@ -13,6 +13,9 @@ type KanbanColumnProps = {
   onAddCard: (columnId: string, title: string, details: string) => void;
   onDeleteCard: (columnId: string, cardId: string) => void;
   onEditCard: (cardId: string, changes: { title?: string; details?: string }) => void;
+  // True while a card is being dragged over this column, including over one
+  // of its cards.
+  preview?: boolean;
 };
 
 export const KanbanColumn = ({
@@ -22,15 +25,18 @@ export const KanbanColumn = ({
   onAddCard,
   onDeleteCard,
   onEditCard,
+  preview = false,
 }: KanbanColumnProps) => {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
 
   return (
     <section
       ref={setNodeRef}
+      aria-label={column.title}
+      data-preview={preview || undefined}
       className={clsx(
         "flex min-h-[520px] flex-col rounded-3xl border border-[var(--stroke)] bg-[var(--surface-strong)] p-4 shadow-[var(--shadow)] transition",
-        isOver && "ring-2 ring-[var(--accent-yellow)]"
+        (isOver || preview) && "ring-2 ring-[var(--accent-yellow)]"
       )}
       data-testid={column.id}
     >

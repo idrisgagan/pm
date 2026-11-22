@@ -60,9 +60,12 @@ def ask[T: pydantic.BaseModel](messages: list[ChatCompletionMessageParam], outpu
         pydantic.ValidationError,
         openai.LengthFinishReasonError,
         openai.ContentFilterFinishReasonError,
+        # The SDK parses choices before returning. With no choices field it
+        # tries to iterate None and raises here.
+        TypeError,
     ) as exc:
         raise AIError("The AI service gave an answer the app could not read.") from exc
-    parsed = response.choices[0].message.parsed
-    if parsed is None:
+    choices = getattr(response, "choices", None)
+    if not choices or choices[0].message.parsed is None:
         raise AIError("The AI service gave an answer the app could not read.")
-    return parsed
+    return choices[0].message.parsed

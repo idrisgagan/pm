@@ -19,8 +19,15 @@ router.include_router(board.router)
 router.include_router(chat.router)
 
 
-# Keep unknown /api paths as JSON 404s instead of falling through to the
-# frontend's HTML 404 page. Must stay last.
-@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-def api_not_found(path: str) -> None:
+# Keep unmatched /api paths as JSON 404s instead of falling through to the
+# frontend's HTML 404 page. Both cover every method, including HEAD and
+# OPTIONS. Must stay last.
+NOT_FOUND_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+
+
+def api_not_found() -> None:
     raise HTTPException(status_code=404, detail="Not Found")
+
+
+router.add_api_route("", api_not_found, methods=NOT_FOUND_METHODS)
+router.add_api_route("/{path:path}", api_not_found, methods=NOT_FOUND_METHODS)

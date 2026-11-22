@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 
 from app import board, db
 
+UNREADABLE = {"detail": "The AI service gave an answer the app could not read."}
+
 
 def action(type: str, **fields) -> dict:
     return {"type": type, "card_id": None, "column_id": None, "title": None,
@@ -69,6 +71,39 @@ def test_bad_history_is_rejected(signed_in_client: TestClient, fake_openrouter, 
 
     assert chat(signed_in_client, history=history).status_code == 422
     assert seen == []
+
+
+@pytest.mark.parametrize(
+    ("reply", "actions"),
+    [
+        pytest.param("x" * 4001, [], id="reply too long"),
+        pytest.param("Done.", [action("delete", card_id=3)] * 21, id="too many actions"),
+    ],
+)
+def test_oversized_output_is_rejected_without_writing(
+    signed_in_client: TestClient, fake_openrouter, reply: str, actions: list
+) -> None:
+    before = signed_in_client.get("/api/board").json()
+    ai_says(fake_openrouter, actions, reply=reply)
+
+    response = chat(signed_in_client)
+
+    assert response.status_code == 502
+    assert response.json() == UNREADABLE
+    assert signed_in_client.get("/api/board").json() == before
+
+
+def test_output_at_the_limits_is_applied(signed_in_client: TestClient, fake_openrouter) -> None:
+    actions = [action("create", column_id=1, title=f"Card {i}") for i in range(20)]
+    ai_says(fake_openrouter, actions, reply="x" * 4000)
+
+    response = chat(signed_in_client)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reply"] == "x" * 4000
+    assert len(body["applied"]) == 20
+    assert body["board"]["version"] == 20
 
 
 # The prompt
@@ -212,6 +247,37 @@ def test_version_goes_up_once_per_applied_action(signed_in_client: TestClient, f
     assert body["board"]["version"] == 2
 
 
+def test_no_op_actions_are_skipped(signed_in_client: TestClient, fake_openrouter) -> None:
+    before = signed_in_client.get("/api/board").json()
+    no_ops = [action("update", card_id=1), action("move", card_id=2, column_id=1)]
+    ai_says(fake_openrouter, no_ops)
+
+    body = chat(signed_in_client).json()
+
+    assert body["applied"] == []
+    assert body["skipped"] == [{"action": item, "reason": "No change"} for item in no_ops]
+    assert body["board"] == before
+    assert signed_in_client.get("/api/board").json() == before
+
+
+def test_unused_action_fields_are_not_reported_as_applied(
+    signed_in_client: TestClient, fake_openrouter
+) -> None:
+    ai_says(fake_openrouter, [
+        action("move", card_id=1, column_id=2, position=0, title="Not used", details="Not used"),
+    ])
+
+    body = chat(signed_in_client).json()
+
+    assert body["applied"] == [action("move", card_id=1, column_id=2, position=0)]
+    assert body["skipped"] == []
+    assert body["board"]["columns"][1]["cards"][0] == {
+        "id": 1,
+        "title": "Align roadmap themes",
+        "details": "Draft quarterly themes with impact statements and metrics.",
+    }
+
+
 # Skipping actions
 
 
@@ -312,6 +378,47 @@ def test_ai_call_does_not_hold_the_database(signed_in_client: TestClient, fake_o
     fake_openrouter(answer_after_writing)
 
     assert chat(signed_in_client).status_code == 200
+
+
+def test_actions_apply_to_the_current_board_not_the_snapshot(
+    signed_in_client: TestClient, fake_openrouter
+) -> None:
+    # The AI sees the first board. Another writer changes it before the
+    # actions are applied. Ids are rechecked; positions are not.
+    ids: dict[str, int] = {}
+
+    def mutate_while_ai_answers(request: httpx2.Request) -> httpx2.Response:
+        other = db.connect()
+        try:
+            with board.open_board(other, "user") as board_id:
+                snapshot = board.read(other, board_id)
+                first, second = [card.id for card in snapshot.columns[0].cards]
+                ids["first"], ids["second"] = first, second
+                board.delete_card(other, board_id, second)
+                board.update_card(
+                    other, board_id, first,
+                    board.CardUpdate(column_id=snapshot.columns[4].id, position=0),
+                )
+        finally:
+            other.close()
+        return completion(json.dumps({"reply": "Done.", "actions": [
+            action("update", card_id=second, title="X"),
+            action("move", card_id=first, position=1),
+        ]}))
+
+    fake_openrouter(mutate_while_ai_answers)
+
+    response = chat(signed_in_client)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["skipped"] == [
+        {"action": action("update", card_id=ids["second"], title="X"), "reason": "Card not found"}
+    ]
+    assert body["applied"] == [action("move", card_id=ids["first"], position=1)]
+    # The stale position was used in Done, where the card now is, not Backlog.
+    assert [card["id"] for card in body["board"]["columns"][4]["cards"]][1] == ids["first"]
+    assert body["board"]["columns"][0]["cards"] == []
 
 
 @pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="OPENROUTER_API_KEY not set")

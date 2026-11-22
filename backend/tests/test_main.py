@@ -8,10 +8,14 @@ def test_health(client: TestClient) -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_unknown_api_route_is_json_404(client: TestClient) -> None:
-    response = client.get("/api/missing")
+@pytest.mark.parametrize("path", ["/api/missing", "/api"])
+@pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"])
+def test_unmatched_api_paths_are_json_404(client: TestClient, method: str, path: str) -> None:
+    response = client.request(method, path)
     assert response.status_code == 404
-    assert response.json() == {"detail": "Not Found"}
+    assert response.headers["content-type"].startswith("application/json")
+    if method != "HEAD":
+        assert response.json() == {"detail": "Not Found"}
 
 
 def test_root_serves_index(client: TestClient) -> None:

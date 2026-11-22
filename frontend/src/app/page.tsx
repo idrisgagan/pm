@@ -16,10 +16,11 @@ export default function Home() {
       .catch(() => setSession({ status: "signed-out" }));
   }, []);
 
-  const handleSignOut = async () => {
-    // Show the login form even if the request fails. A reload re-checks the session.
-    await logout().catch(() => undefined);
+  const handleSignOut = () => {
+    // Show the login form at once. A hanging or failed request must not hold
+    // the user on the board. A reload re-checks the session.
     setSession({ status: "signed-out" });
+    void logout().catch(() => undefined);
   };
 
   if (session.status === "loading") {

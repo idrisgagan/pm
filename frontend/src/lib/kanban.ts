@@ -68,6 +68,11 @@ export const moveCard = (
 
   if (activeColumnId === overColumnId) {
     if (isOverColumn) {
+      // Dropping the last card back on its own column changes nothing. Return
+      // the same array so the caller can skip the save.
+      if (activeColumn.cardIds.at(-1) === activeId) {
+        return columns;
+      }
       const nextCardIds = activeColumn.cardIds.filter(
         (cardId) => cardId !== activeId
       );

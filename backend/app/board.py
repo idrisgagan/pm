@@ -151,6 +151,7 @@ def _card_ids(conn: sqlite3.Connection, column_id: int, without: int | None = No
 
 def _changed(conn: sqlite3.Connection, board_id: int) -> None:
     # Every change function calls this last, after its checks have passed.
+    # A function that would write nothing returns before reaching it.
     conn.execute("UPDATE boards SET version = version + 1 WHERE id = ?", (board_id,))
 
 
@@ -174,31 +175,43 @@ def get_board(conn: sqlite3.Connection, username: str) -> Board:
         return read(conn, board_id)
 
 
-def rename_column(conn: sqlite3.Connection, board_id: int, column_id: int, title: str) -> None:
+def rename_column(conn: sqlite3.Connection, board_id: int, column_id: int, title: str) -> bool:
     _check_column(conn, board_id, column_id)
+    (current,) = conn.execute("SELECT title FROM columns WHERE id = ?", (column_id,)).fetchone()
+    if current == title:
+        return False
     conn.execute("UPDATE columns SET title = ? WHERE id = ?", (title, column_id))
     _changed(conn, board_id)
+    return True
 
 
-def create_card(conn: sqlite3.Connection, board_id: int, card: CardCreate) -> None:
+def create_card(conn: sqlite3.Connection, board_id: int, card: CardCreate) -> bool:
     _check_column(conn, board_id, card.column_id)
     conn.execute(
         "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
         (card.column_id, card.title, card.details, len(_card_ids(conn, card.column_id))),
     )
     _changed(conn, board_id)
+    return True
 
 
-def update_card(conn: sqlite3.Connection, board_id: int, card_id: int, changes: CardUpdate) -> None:
+def update_card(conn: sqlite3.Connection, board_id: int, card_id: int, changes: CardUpdate) -> bool:
     from_column = _card_column(conn, board_id, card_id)
     to_column = changes.column_id if changes.column_id is not None else from_column
     # Check before writing anything, so a bad column changes nothing.
     _check_column(conn, board_id, to_column)
+    # A column_id on its own moves the card only when it names another column.
+    # A position on its own moves it even within the same column.
+    moving = changes.position is not None or (
+        changes.column_id is not None and changes.column_id != from_column
+    )
+    if changes.title is None and changes.details is None and not moving:
+        return False
     if changes.title is not None:
         conn.execute("UPDATE cards SET title = ? WHERE id = ?", (changes.title, card_id))
     if changes.details is not None:
         conn.execute("UPDATE cards SET details = ? WHERE id = ?", (changes.details, card_id))
-    if changes.column_id is not None or changes.position is not None:
+    if moving:
         # Take the card out first, so a same-column move counts positions
         # without it.
         target = _card_ids(conn, to_column, without=card_id)
@@ -208,10 +221,12 @@ def update_card(conn: sqlite3.Connection, board_id: int, card_id: int, changes: 
         if to_column != from_column:
             _renumber(conn, from_column, _card_ids(conn, from_column))
     _changed(conn, board_id)
+    return True
 
 
-def delete_card(conn: sqlite3.Connection, board_id: int, card_id: int) -> None:
+def delete_card(conn: sqlite3.Connection, board_id: int, card_id: int) -> bool:
     column_id = _card_column(conn, board_id, card_id)
     conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
     _renumber(conn, column_id, _card_ids(conn, column_id))
     _changed(conn, board_id)
+    return True

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Read first
 
 - `AGENTS.md`: requirements, tech decisions, color scheme and coding standards. Follow its standards: keep it simple, no extra features, no emojis, find the root cause before fixing.
-- `docs/PLAN.md`: the build plan. Parts 1 to 12 are done. Record new work there in the same style: checklist, tests, success criteria.
+- `docs/PLAN.md`: the build plan. Parts 1 to 12 are complete except that the Windows start and stop scripts have never been run. Record new work there in the same style: checklist, tests, success criteria.
 - `backend/AGENTS.md`, `frontend/AGENTS.md`, `scripts/AGENTS.md`: detailed docs for each folder (routes, behavior, test hooks). Update the matching file when you change behavior.
 - `docs/DATABASE.md` and `docs/schema.json`: the database rules and schema.
 

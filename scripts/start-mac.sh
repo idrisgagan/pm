@@ -26,7 +26,7 @@ else
 fi
 
 for _ in $(seq 1 30); do
-  if curl -sf "$URL/api/health" >/dev/null; then
+  if curl -sf --max-time 2 "$URL/api/health" >/dev/null; then
     echo "App running at $URL"
     exit 0
   fi
@@ -34,5 +34,6 @@ for _ in $(seq 1 30); do
 done
 
 echo "App did not become healthy within 30 seconds. Container logs:" >&2
-docker logs "$CONTAINER" >&2
+docker logs "$CONTAINER" >&2 || true
+docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 exit 1

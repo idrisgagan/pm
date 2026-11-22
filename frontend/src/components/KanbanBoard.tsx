@@ -10,6 +10,7 @@ import {
   useSensors,
   closestCorners,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
@@ -39,6 +40,7 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
   const [board, setBoard] = useState<BoardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [overColumnId, setOverColumnId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -49,15 +51,29 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
     })
   );
 
-  // Replies can arrive out of order. A reply with a lower version than the
-  // last one shown is older, so it is dropped instead of undoing newer changes.
+  // The latest board, including optimistic changes. Handlers build the next
+  // board from this instead of the last render, so two edits in the same tick
+  // both survive.
+  const boardRef = useRef<BoardData | null>(null);
   const shownVersion = useRef(0);
+  const pendingSaves = useRef(new Set<number>());
+  const blockedSaves = useRef(new Set<number>());
+  const lastSaveId = useRef(0);
+
+  // Replies can arrive out of order. Drop one older than the board on screen.
+  // While a save is pending, the screen shows an optimistic board, so a reply
+  // at the same version was made before that change and would undo it.
   const show = (next: ApiBoard) => {
-    if (next.version < shownVersion.current) {
+    if (
+      next.version < shownVersion.current ||
+      (pendingSaves.current.size > 0 && next.version === shownVersion.current)
+    ) {
       return;
     }
     shownVersion.current = next.version;
-    setBoard(fromApi(next));
+    const data = fromApi(next);
+    boardRef.current = data;
+    setBoard(data);
   };
 
   const isSignedOut = (error: unknown) => error instanceof ApiError && error.status === 401;
@@ -70,20 +86,46 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
     loadOnMount();
   }, []);
 
+  type Change = { next: BoardData; send: () => Promise<ApiBoard> } | null;
+
   // Show the change first, then save it. The server's board replaces the
   // local one, unless a newer reply has already been shown.
-  const save = async (next: BoardData, send: () => Promise<ApiBoard>) => {
+  const save = async (makeChange: (current: BoardData) => Change) => {
+    const current = boardRef.current;
+    if (!current) {
+      return;
+    }
+    const change = makeChange(current);
+    if (!change) {
+      return;
+    }
+    const { next, send } = change;
+    boardRef.current = next;
     setBoard(next);
+
+    const id = ++lastSaveId.current;
+    pendingSaves.current.add(id);
+    let reply: ApiBoard;
     try {
-      show(await send());
-      setError(null);
+      reply = await send();
     } catch (error) {
+      pendingSaves.current.delete(id);
       if (isSignedOut(error)) {
         onSignOut();
         return;
       }
+      // Saves already in flight when this one failed cannot clear its message.
+      for (const other of pendingSaves.current) {
+        blockedSaves.current.add(other);
+      }
       setError(SAVE_FAILED);
       await load();
+      return;
+    }
+    pendingSaves.current.delete(id);
+    show(reply);
+    if (!blockedSaves.current.delete(id)) {
+      setError(null);
     }
   };
 
@@ -99,66 +141,87 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
     setActiveCardId(event.active.id as string);
   };
 
+  const handleDragOver = (event: DragOverEvent) => {
+    const overId = event.over?.id as string | undefined;
+    const columnId = overId
+      ? board.columns.find(
+          (column) => column.id === overId || column.cardIds.includes(overId)
+        )?.id
+      : undefined;
+    setOverColumnId(columnId ?? null);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveCardId(null);
+    setOverColumnId(null);
 
     if (!over || active.id === over.id) {
       return;
     }
 
     const cardId = active.id as string;
-    const columns = moveCard(board.columns, cardId, over.id as string);
-    const column = columns.find((column) => column.cardIds.includes(cardId));
-    if (columns === board.columns || !column) {
-      return;
-    }
-    save({ ...board, columns }, () =>
-      updateCard(toApiId(cardId), {
-        column_id: toApiId(column.id),
-        position: column.cardIds.indexOf(cardId),
-      })
-    );
+    save((current) => {
+      const columns = moveCard(current.columns, cardId, over.id as string);
+      const column = columns.find((column) => column.cardIds.includes(cardId));
+      if (columns === current.columns || !column) {
+        return null;
+      }
+      return {
+        next: { ...current, columns },
+        send: () =>
+          updateCard(toApiId(cardId), {
+            column_id: toApiId(column.id),
+            position: column.cardIds.indexOf(cardId),
+          }),
+      };
+    });
   };
 
   const handleRenameColumn = (columnId: string, title: string) => {
-    save(
-      {
-        ...board,
-        columns: board.columns.map((column) =>
+    save((current) => ({
+      next: {
+        ...current,
+        columns: current.columns.map((column) =>
           column.id === columnId ? { ...column, title } : column
         ),
       },
-      () => renameColumn(toApiId(columnId), title)
-    );
+      send: () => renameColumn(toApiId(columnId), title),
+    }));
   };
 
   // A new card needs its id from the server, so it shows once the server replies.
   const handleAddCard = (columnId: string, title: string, details: string) => {
-    save(board, () => createCard(toApiId(columnId), title, details));
+    save((current) => ({
+      next: current,
+      send: () => createCard(toApiId(columnId), title, details),
+    }));
   };
 
   const handleDeleteCard = (columnId: string, cardId: string) => {
-    save(
-      {
+    save((current) => ({
+      next: {
         cards: Object.fromEntries(
-          Object.entries(board.cards).filter(([id]) => id !== cardId)
+          Object.entries(current.cards).filter(([id]) => id !== cardId)
         ),
-        columns: board.columns.map((column) =>
+        columns: current.columns.map((column) =>
           column.id === columnId
             ? { ...column, cardIds: column.cardIds.filter((id) => id !== cardId) }
             : column
         ),
       },
-      () => deleteCard(toApiId(cardId))
-    );
+      send: () => deleteCard(toApiId(cardId)),
+    }));
   };
 
   const handleEditCard = (cardId: string, changes: { title?: string; details?: string }) => {
-    save(
-      { ...board, cards: { ...board.cards, [cardId]: { ...board.cards[cardId], ...changes } } },
-      () => updateCard(toApiId(cardId), changes)
-    );
+    save((current) => ({
+      next: {
+        ...current,
+        cards: { ...current.cards, [cardId]: { ...current.cards[cardId], ...changes } },
+      },
+      send: () => updateCard(toApiId(cardId), changes),
+    }));
   };
 
   const activeCard = activeCardId ? board.cards[activeCardId] : null;
@@ -233,7 +296,12 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
               sensors={sensors}
               collisionDetection={closestCorners}
               onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
+              onDragCancel={() => {
+                setActiveCardId(null);
+                setOverColumnId(null);
+              }}
             >
               <section className="grid gap-6 lg:grid-cols-5">
                 {board.columns.map((column) => (
@@ -245,6 +313,7 @@ export const KanbanBoard = ({ onSignOut }: KanbanBoardProps) => {
                     onAddCard={handleAddCard}
                     onDeleteCard={handleDeleteCard}
                     onEditCard={handleEditCard}
+                    preview={activeCardId !== null && overColumnId === column.id}
                   />
                 ))}
               </section>

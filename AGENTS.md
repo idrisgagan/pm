@@ -30,7 +30,7 @@ For the MVP, this will run locally (in a docker container)
 
 ## Starting Point
 
-A working MVP of the frontend has been built and is already in frontend. This is not yet designed for the Docker setup. It's a pure frontend-only demo.
+The frontend began as a working demo. The Dockerfile now builds it as a static export with Node, and FastAPI serves the built files at `/` from `PM_STATIC_DIR`. See `CLAUDE.md` for the current layout.
 
 ## Color Scheme
 

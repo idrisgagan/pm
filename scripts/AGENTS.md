@@ -18,7 +18,7 @@ The Mac and Linux scripts are identical. Keep them in sync when changing either.
    - Port `127.0.0.1:8000` only, so the app is not reachable from other machines.
    - Docker volume `pm-data` mounted at `/app/backend/data`.
    - Root `.env` passed with `--env-file`, if it exists. If not, a warning is printed and the app starts anyway.
-4. Waits up to 30 seconds for `/api/health`. Prints the URL on success, or the container logs on failure.
+4. Waits up to 30 seconds for `/api/health`, with a 2-second timeout per request. Prints the URL on success. On failure, prints the container logs, removes the container so port 8000 is free, and exits 1.
 
 ## Stop
 

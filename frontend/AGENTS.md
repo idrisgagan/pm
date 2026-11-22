@@ -18,7 +18,7 @@ The frontend needs the backend for every API call. `npm run dev` shows the login
 
 ## Stack
 
-- Next.js 16.4.3 (App Router), React 19.2.3, TypeScript (strict)
+- Next.js 16.4.6 (App Router), React 19.2.3, TypeScript (strict)
 - Tailwind CSS 4, with color tokens as CSS variables in `src/app/globals.css`
 - `@dnd-kit/core` and `@dnd-kit/sortable` for drag and drop
 - Vitest 5 + Testing Library (jsdom) for unit tests, Playwright for end-to-end tests
@@ -72,17 +72,16 @@ tests/
 ## Behavior (`src/components/KanbanBoard.tsx`)
 
 - On mount, loads `GET /api/board`. "Loading board..." shows only until the first load finishes.
-- Every change goes through `save`: show the new board, call the API, then replace the board with the server's reply. If the call fails, reload the board in the background and show "Could not save your change. The board was reloaded." in the header. The message clears after the next successful save.
-- Every board from the server, from a save, a reload or a chat reply, goes through `show`. It drops a board whose `version` is lower than the last one shown, so a slow reply cannot undo a newer change. Equal versions are the same board, so they are shown.
-- No API call runs inside a React state updater. Handlers work out the next board from the current one.
+- Every change goes through `save`: show the new board, call the API, then replace the board with the server's reply. If the call fails, reload the board in the background and show "Could not save your change. The board was reloaded." in the header. A save started after the failure clears the message. A save that was already in flight when it failed does not.
+- Every board from the server, from a save, a reload or a chat reply, goes through `show`. It drops a board whose `version` is lower than the last one shown. While a save is pending, it also drops a reply at the same version, because that reply was made before the optimistic change and would undo it.
+- No API call runs inside a React state updater. Handlers work out the next board from the latest board, held in a ref, so two edits in the same tick both apply.
 - Add card: shows once the server replies, because the card needs its id from the server.
 - Rename column: the input is uncontrolled. It saves on blur or Enter, skips empty or unchanged titles, and Escape puts the saved title back. `key={column.title}` resets the input when the saved title changes.
-- Edit card: click the title or details. Same keys as rename, plus Shift+Enter for a new line in details. An empty title keeps the old one. Empty details show "No details yet."
-- Move card: `moveCard` gives the new order, then one `PATCH /api/cards/{id}` sends the card's new column and position.
+- Edit card: click the title or details. Same keys as rename, plus Shift+Enter for a new line in details. An empty title keeps the old one. Empty details show "No details yet." Both fields are keyed on the saved value, so a new title or details from the server resets an open field.
+- Move card: `moveCard` gives the new order, then one `PATCH /api/cards/{id}` sends the card's new column and position. Dropping the last card on its own column background changes nothing, so no request is sent.
 - Remove card: `DELETE /api/cards/{id}`.
-- Drag and drop: `PointerSensor` (starts after 6 px of movement) and `KeyboardSensor` with `sortableKeyboardCoordinates`. To move with the keyboard: Tab to a card, Space to pick up, arrow keys to move, Space to drop, Escape to cancel. Collision detection is `closestCorners`, and the move is applied on drag end.
-- The card is its own activator node (`setActivatorNodeRef`). Without it, Space or Enter on a button or field inside the card picks the card up.
-- Edit fields stop `pointerdown` from reaching the card's drag listener, so selecting text does not start a drag. Do not use the sortable's `disabled` option for this: it sets `aria-disabled` on the whole card, which disables the fields inside it for screen readers and Playwright.
+- Drag and drop: `PointerSensor` (starts after 6 px of movement) and `KeyboardSensor` with `sortableKeyboardCoordinates`. To move with the keyboard: Tab to a card's drag handle, Space to pick up, arrow keys to move, Space to drop, Escape to cancel. Collision detection is `closestCorners`, and the move is applied on drag end. `onDragOver` marks the column under the pointer so a drop target is visible before the drop.
+- The drag handle is the sortable's activator node (`setActivatorNodeRef`). The card is an `article`, not a button, because it contains buttons and fields. Do not use the sortable's `disabled` option: it sets `aria-disabled` on the whole card, which disables the fields inside it for screen readers and Playwright.
 - Cards have `aria-label` set to their title. Without it, the card's accessible name is every label inside it joined up.
 - `DndContext` has a fixed `id="kanban-board"`. Without it, the generated `aria-describedby` id differs between server and browser render, and cards lose their screen-reader instructions.
 - Inputs use the backend's limits: titles 200 characters, details 2,000.
@@ -92,8 +91,8 @@ tests/
 
 - Layout: from Tailwind's `2xl` breakpoint (1536px), the sidebar is a 340px column beside the board and sticks while the page scrolls. Narrower, it sits under the board. Five columns plus the sidebar leave too little room for card titles below 1536px. The page's maximum width is 1800px.
 - The root element uses `overflow-clip`, not `overflow-hidden`. `overflow-hidden` makes it a scroll container, and the sidebar would no longer stick.
-- The conversation lives in the sidebar's state. Each message sends the earlier ones as `history`, cut to the last 20 messages of up to 4,000 characters each, which are the backend's limits.
-- Enter sends, Shift+Enter adds a line. The box takes up to 2,000 characters. While a reply is pending, "Thinking..." shows and Send is disabled. Typing still works.
+- The conversation lives in the sidebar's state. Each message sends the earlier ones as `history`, cut to the last 20 messages of up to 4,000 code points each, which are the backend's limits. Cutting counts code points, so an emoji at the boundary stays whole.
+- Enter sends, Shift+Enter adds a line. The box takes up to 2,000 characters. While a reply is pending, "Thinking..." shows and Send is disabled. Typing still works. After a failure the message and typed text are put back in the box, capped at 2,000 code points so a retry fits the backend's limit.
 - A reply's `board` replaces the board through `onBoard`, which is `show` in `KanbanBoard`. The board never shows its loading screen again, so the chat draft and conversation stay.
 - Skipped actions show as one note under the reply, for example "1 change could not be made: Card not found." Skipped actions with every field null are left out.
 - Errors show in the sidebar and leave the board alone. 503 shows "AI is not configured.", any other error status "The AI could not answer. Try again.", and a network failure "Could not reach the server." The message goes back into the box, and anything typed while waiting is kept after it. A 401 signs out.
@@ -101,8 +100,8 @@ tests/
 
 ## Test hooks
 
-- Columns: `data-testid="column-<id>"`, for example `column-3`. Cards: `data-testid="card-<id>"`. These are also the dnd-kit ids.
-- A card is a button named after its title. Inside it: `Edit <title>`, `Edit details of <title>`, `Delete <title>`. Edit fields: `aria-label="Card title"` and `"Card details"`.
+- Columns: `data-testid="column-<id>"` and a named `region`, for example "Backlog". Cards: `data-testid="card-<id>"`. These are also the dnd-kit ids.
+- A card is an `article` named after its title. Its drag handle is a button named `Drag <title>`. Inside it: `Edit <title>` (`data-testid="card-title"`), `Edit details of <title>`, `Delete <title>`. Edit fields: `aria-label="Card title"` and `"Card details"`.
 - Column title input: `aria-label="Column title"`.
 - Chat: the sidebar is `role="complementary"` named "AI chat". Messages are in its `role="log"`. The box is `aria-label="Message"`, the button "Send". "Thinking..." is `role="status"`. Errors are `role="alert"`.
 
@@ -123,18 +122,19 @@ The live chat test is skipped unless `OPENROUTER_API_KEY` is set in the shell. P
 
 There is one user and one board, so tests run one at a time (`workers: 1`). Board tests call `openFreshBoard`, which resets the board to `SEED` in `tests/helpers.ts` through the API. Card ids change on every reset, so find cards by title, not id.
 
-Keyboard drag tests wait one browser task after picking a card up, because dnd-kit's `KeyboardSensor` adds its arrow-key listener in a `setTimeout`. Keep that wait in any new keyboard test.
+Keyboard drag tests wait one browser task after picking a card up, because dnd-kit's `KeyboardSensor` adds its arrow-key listener in a `setTimeout`. After the arrow key, they wait for dnd-kit's live region text to change, which means the new drop target has been accepted. `aria-pressed` stays true throughout the drag, so it cannot be used as that sync point. Keep both waits in any new keyboard test.
 
 Next.js adds an empty `role="alert"` route announcer to every page. Scope alert locators, for example `page.locator("form").getByRole("alert")`, `page.locator("header").getByRole("alert")` or the chat sidebar's `getByRole("alert")`.
 
 ## Tests
 
-- `src/components/ChatSidebar.test.tsx`: sends on Enter and shows the reply; sends history; cuts history to 20 messages of 4,000 characters; Shift+Enter adds a line; no empty sends; pending disables sending; error text for 502, 500, 503 and a network failure, with the message put back; text typed while waiting is kept; retry leaves the failed message out of history; 401 signs out; skipped-change notes, with empty actions left out; label colors by role.
+- `src/components/ChatSidebar.test.tsx`: sends on Enter and shows the reply; sends history; cuts history to 20 messages of 4,000 characters, with exact boundary cases and an emoji at the cut; caps the restored draft after a failure; Shift+Enter adds a line; no empty sends; pending disables sending; error text for 502, 500, 503 and a network failure, with the message put back; text typed while waiting is kept; retry leaves the failed message out of history; 401 signs out; skipped-change notes, with empty actions left out; message labels in order by role.
 - `src/lib/api.test.ts`: changes are sent as JSON, non-2xx throws `ApiError` with the status, network errors pass through.
-- `src/lib/kanban.test.ts`: `fromApi` tags ids and keeps order, `toApiId`, and `moveCard` reorder in a column, move to another column, drop on a column.
-- `src/components/KanbanBoard.test.tsx`: loads from the server; rename saves once on blur and skips empty titles; card title saves on Enter; details save on blur with Shift+Enter lines; Escape and an empty title do not save; add; remove; a failed save shows the message and reloads; an older reply that arrives after a newer one is dropped; a chat reply replaces the board and keeps the draft; a 401 signs out.
+- `src/lib/kanban.test.ts`: `fromApi` tags ids and keeps order, `toApiId`, and `moveCard` reorder in a column, move to another column, drop on a column, and a no-op drop on the same column.
+- `src/components/KanbanColumn.test.tsx`: named region, and the marker while a card is dragged over it.
+- `src/components/KanbanBoard.test.tsx`: loads from the server; rename saves once on blur and skips empty titles; card title saves on Enter; details save on blur with Shift+Enter lines; Escape and an empty title do not save; add; remove; a failed save shows the message and reloads; a pending save's message survives an earlier save's success; a stale chat reply does not undo a pending delete; two edits in one tick both apply; an open field does not overwrite a newer title from chat; no button contains another button or field; an older reply that arrives after a newer one is dropped; a chat reply replaces the board and keeps the draft; a 401 signs out.
 - `src/components/LoginForm.test.tsx`: valid sign-in, wrong credentials, server unreachable, both fields required.
-- `src/app/page.test.tsx`: signed out shows the form, signed in shows the board, signing in, signing out, signing out when the request fails, a 401 from the board shows the form.
+- `src/app/page.test.tsx`: signed out shows the form, signed in shows the board, signing in, signing out, signing out when the request fails or never settles, a 401 from the board shows the form.
 - `tests/auth.spec.ts`: login form first, wrong password, stays signed in after reload, sign out, API returns 401 without a session.
 - `tests/chat.spec.ts`: a card from a faked chat reply appears without a reload; a faked 502 shows the error, puts the message back and leaves the board alone; live: the AI adds a card that is still there after a reload.
-- `tests/kanban.spec.ts`: loads the seed board; add, edit, delete, rename, mouse move between columns, keyboard reorder, keyboard move, each checked again after a reload; keyboard instructions linked to cards; a failed save shows the message and the board matches the server.
+- `tests/kanban.spec.ts`: loads the seed board; add, edit, delete, rename, mouse move between columns, keyboard reorder, keyboard move, each checked again after a reload; keyboard instructions linked to drag handles; a failed save shows the message and the board matches the server.

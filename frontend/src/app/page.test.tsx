@@ -53,6 +53,24 @@ describe("Home", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/logout", expect.objectContaining({ method: "POST" }));
   });
 
+  it("shows the login form when the logout request never settles", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const path = String(input);
+      if (path === "/api/logout") {
+        return new Promise<Response>(() => undefined);
+      }
+      const body = path === "/api/board" ? { version: 0, columns: [] } : { username: "user" };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    render(<Home />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Sign in" }, { timeout: 2000 })
+    ).toBeInTheDocument();
+  });
+
   it("shows the login form when the board says the session has ended", async () => {
     mockApi({ "/api/me": 200, "/api/board": 401, "/api/logout": 204 });
     render(<Home />);

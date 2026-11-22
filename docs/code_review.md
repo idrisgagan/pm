@@ -1,38 +1,54 @@
 # Code review
 
-Date: 2026-11-21. Scope: the whole repo at commit `f56f166`, after Parts 1 to 10.
-
-This replaces the review of `ae223d6` (2026-11-01), which covered the course starter before the backend existed. That version is in git history.
+Date: 2026-11-22. Scope: the whole repo in the working tree after the fixes below. This replaces the 2026-11-21 review in this file, which found 4 Medium and 27 Low findings and is in git history. All 31 findings are now fixed. Nothing is committed.
 
 ## Summary
 
-The app is in good shape. All tests pass: 110 backend, 49 unit, 18 browser, including both live AI tests. Lint and the type check are clean. 11 of the 12 items on the previous review's rebuild checklist are done, and the twelfth has one gap (L1).
+All 31 findings are fixed: 4 Medium, 27 Low. No Critical or High findings. The seven findings left open by the earlier review are also fixed: its L1 is M3 here, L2 is L12, L3 is L14, L4 is L20, L5 is L24, L6 is L5 and L7 is L10.
 
-There are no Critical or High findings. There is one Medium: when two saves overlap, an older server reply can arrive last and put stale data back on screen. Part 10 of `docs/PLAN.md` recorded this as a known limit for a chat reply and a board save. A probe showed it also happens between two ordinary board saves, with no chat involved. The rest are Low.
+Final checks pass: 149 backend tests, 64 frontend unit tests, 18 browser tests, lint, type check, shell syntax, whitespace and all Docker base-image digests. Live AI calls ran in the backend suite and the browser suite.
 
-**Update, 2026-11-21:** M1 is fixed. L8, found later the same day during the backend refactor (Part 12 in `docs/PLAN.md`), is also fixed. See "Fix log". L1 to L7 are still open.
+The fixes change three behaviors worth knowing:
 
-## Fix log
+- A board `version` now counts writes, not content. No-op edits do not raise it. `docs/DATABASE.md` says this.
+- A copied session cookie stops working after logout. Sessions are held in memory, so they end on restart, even with `PM_SESSION_SECRET` set.
+- Titles and details edit fields reset when a newer saved value arrives. An open field can no longer write old text over a chat rename.
 
-| Finding | Change | Verified by |
-|---|---|---|
-| M1 | Schema step 2 adds `boards.version`. Every board change adds one to it, and every board the API returns includes it. `KanbanBoard.show` drops any board with a lower version than the one on screen. Saves, reloads and chat replies all go through it. Recorded as Part 11 in `docs/PLAN.md`. | 4 new backend tests and 1 new unit test. Each of three deliberate breaks failed at least one of them. Full retest: backend 114 passed (live included), lint and type check clean, unit 50 passed, browser 18 passed (live included). The app on port 8000 upgraded the `pm-data` database to schema version 2 and kept its board. |
-| L8 | `auth.check_credentials` compares UTF-8 bytes instead of strings. | 2 new cases in `test_auth.py`, which fail without the fix. On the running app, a non-ASCII sign-in returned 401. |
+## Status
 
-## Action list
-
-| # | Action | Finding | Severity | Status |
-|---|---|---|---|---|
-| 1 | Drop board replies older than the board on screen, using a version the server raises on every change | M1 | Medium | Done 2026-11-21 |
-| 2 | Skip AI `update` and `move` actions that change no field, with a reason, and add tests | L1 | Low | Open |
-| 3 | Decide whether a move to the card's own column with no position should do nothing | L2 | Low | Open |
-| 4 | Bump `next` and `eslint-config-next` to 16.4.6, run `uv lock --upgrade`, rerun all tests | L4 | Low | Open |
-| 5 | Ignore `test-results/` and `coverage/`, untrack `.last-run.json`, set `coverage.include` | L5 | Low | Open |
-| 6 | Record that sign-out does not revoke the cookie, and revisit before the app leaves localhost | L3 | Low | Open |
-| 7 | Later: a drag handle for cards, and a drop preview between columns | L6, L7 | Low | Open |
-| 8 | Compare sign-in credentials as bytes, so non-ASCII input gets 401 instead of 500 | L8 | Low | Done 2026-11-21 |
-
-2 to 5 can go in one change.
+| # | Fix | Finding | Verified by |
+|---|---|---|---|
+| 1 | Card edit fields keyed on the saved value | M1 | `KanbanBoard.test.tsx`, browser edit test |
+| 2 | Empty `choices` and `TypeError` from the SDK become 502 | M2 | `test_ai.py` |
+| 3 | No-op board and AI actions skipped; `applied` echoes only used fields | M3 | `test_board.py`, `test_chat.py` |
+| 4 | Save-failed message survives other saves already in flight | M4 | `KanbanBoard.test.tsx` |
+| 5 | Same-version reply dropped while a save is pending | L1 | `KanbanBoard.test.tsx` |
+| 6 | Handlers build the next board from a ref to the latest board | L2 | `KanbanBoard.test.tsx` |
+| 7 | Restored draft capped at 2,000 code points | L3 | `ChatSidebar.test.tsx` |
+| 8 | History cut by code point, not UTF-16 unit | L4 | `ChatSidebar.test.tsx` |
+| 9 | Card is an `article` with a separate drag handle | L5 | `KanbanBoard.test.tsx`, browser drag tests |
+| 10 | Columns have `aria-label` | L6 | `KanbanColumn.test.tsx` |
+| 11 | Sign out shows the login form without waiting on the request | L7 | `page.test.tsx` |
+| 12 | `applied` contains only the fields the action used | L8 | `test_chat.py` |
+| 13 | Last card dropped on its own column sends no PATCH | L9 | `kanban.test.ts` |
+| 14 | Dragged-over column marked before the drop | L10 | `KanbanColumn.test.tsx` |
+| 15 | Exact 20 by 4,000 history limits tested | L11 | `ChatSidebar.test.tsx` |
+| 16 | `column_id` alone in the card's own column is a no-op | L12 | `test_board.py`, `backend/AGENTS.md` |
+| 17 | Lone surrogates in credentials return 401 | L13 | `test_auth.py` |
+| 18 | Logout revokes the session id in memory | L14 | `test_auth.py` |
+| 19 | `/api` catch-all covers HEAD, OPTIONS and bare `/api` | L15 | `test_main.py` |
+| 20 | Reply capped at 4,000 characters, actions at 20 | L16 | `test_chat.py` |
+| 21 | Board snapshot trade-off documented in code and docs | L17 | Read `chat.py`, `backend/AGENTS.md` |
+| 22 | Parallel `init` serialized; login fields limited to 200 | L18 | `test_db.py`, `test_auth.py` |
+| 23 | Schema test checks foreign keys, indexes, defaults and STRICT | L19 | `test_db.py` |
+| 24 | Dependencies upgraded; `frontend/AGENTS.md` version updated | L20 | All suites after `uv lock --upgrade` and `npm install` |
+| 25 | Windows failure paths fixed | L21 | Code review |
+| 26 | Health wait timeout and container cleanup added | L22 | `bash -n`, byte comparison |
+| 27 | Nested `.env` patterns fixed | L23 | `git check-ignore` |
+| 28 | Generated test output untracked; lint and coverage config fixed | L24 | `git ls-files` |
+| 29 | Base images pinned by digest | L25 | `docker buildx imagetools inspect` |
+| 30 | Stale docs updated | L26 | Read `AGENTS.md`, `CLAUDE.md`, `docs/PLAN.md` |
+| 31 | Brittle assertions and keyboard sync fixed | L27 | All 18 browser tests |
 
 ## Severity scale
 
@@ -43,137 +59,267 @@ There are no Critical or High findings. There is one Medium: when two saves over
 | Medium | Wrong behavior that corrects itself or has a workaround. Fix soon. |
 | Low | Edge cases, maintenance, docs, and risks accepted for a local single-user MVP. |
 
-## Critical
+## Medium findings
 
-None.
+### M1. An open card edit field wrote an old title over a newer board
 
-## High
+The input and textarea used `defaultValue` with no `key`, so React kept the DOM node when a chat reply or reload changed the card. Blurring sent the old text to the server and lost the new title.
 
-None.
+**Fix:** `frontend/src/components/KanbanCard.tsx` keys the title input on `card.title` and the textarea on `card.details`. A newer saved value remounts the field with that value.
 
-## Medium
+**Verified by:** a new `KanbanBoard.test.tsx` case opens the title field, applies a faked chat rename and blurs. No PATCH is sent. The browser edit test still passes.
 
-### M1. An older save reply can overwrite a newer one on screen (fixed)
+### M2. An AI reply with no choices returned 500
 
-- **Where (at review time):** `frontend/src/components/KanbanBoard.tsx:67-80` (`save`), and `:252` (chat replies through `onBoard`)
-- **What happens:** every save shows the change, sends the request, then replaces the whole board with the server's reply. Nothing checks which request a reply belongs to. If reply A arrives after reply B, the screen shows the board as it was after A, without B's change.
-- **Evidence:** a temporary Vitest probe (deleted) renamed a column, held that reply back, edited a card title to "Second", and let that reply return. Then it released the rename reply, which held the board from before the edit. The card went back to "First" on screen, while the server had "Second". The comment at `KanbanBoard.tsx:65-66` said "the screen always ends up matching the database". That claim did not hold when saves overlapped.
-- **Already known, in part:** `docs/PLAN.md` (end of Part 10, removed by the fix) said: "Known limit, not fixed: if a chat reply and a board save reach the browser at almost the same time, the one that arrives last decides what the screen shows until the next change or reload. The database is right either way." The probe used two board saves and no chat, so the limit is wider than recorded. It needs two board edits whose replies come back out of order. The probe forced that order. I did not measure how often it happens on the real app.
-- **Effect:** the database is correct. The screen is wrong until the next save or reload. From code, not reproduced: a drag made from the wrong screen sends a position computed from the wrong card order, and a chat reply that returns while you edit the board can overwrite the edit on screen in the same way.
-- **Action as first written:** a request counter in the browser, where a reply is applied only if its request is the newest. Not used. A chat request is sent first but its board is read last, so a counter would drop the AI's changes if you edit the board while it is thinking. The browser cannot know the order of changes. Only the server can.
-- **Fixed, 2026-11-21:** the server raises `boards.version` on every change and returns it with every board. `KanbanBoard.show` drops a board with a lower version than the one on screen. The probe is now the unit test "keeps a newer reply when an older one arrives after it". The known-limit note is gone from `docs/PLAN.md`, and the code comment now describes the check. See "Fix log".
+The SDK accepts a completion with `choices: []`. Indexing `[0]` raised `IndexError`, and no handler turned it into a 502. The SDK can also raise `TypeError` while parsing a malformed response before `ask` sees it.
 
-## Low
+**Fix:** `backend/app/ai.py` catches `TypeError` in the existing handler and checks the choices list before reading it. Both paths raise `AIError`, which `errors.py` maps to 502.
 
-### L1. AI actions that change nothing count as applied
+**Verified by:** new `test_ai.py` cases for an empty choices list and a response with no choices field.
 
-- **Where:** `backend/app/chat.py:66-71`
-- **Evidence:** a probe sent `update` with only `card_id`, and `move` with only `card_id`. The response had both in `applied`, none in `skipped`, and the board was unchanged. `CardUpdate` with no fields is valid, and `update_card` then changes no card. Since the M1 fix, it still raises the board's version.
-- **Effect:** the AI's reply can say it changed a card, and no note appears under it, because the frontend only notes skipped actions. The previous rebuild checklist asked to "return only the actions that were applied" for this reason.
-- **Action:** in `_apply`, raise a skip reason when an `update` has neither title nor details, or a `move` has neither column nor position. Add one test for each.
+### M3. No-op changes raised the version and were reported as applied
 
-### L2. A move to the card's own column with no position sends it to the bottom
+An empty card edit, a column renamed to its current title and an AI action with only an id wrote nothing but still called `_changed`. Two no-op AI actions appeared in `applied` with an empty `skipped` list.
 
-- **Where:** `backend/app/board.py:201-207`
-- **Evidence:** a probe sent `PATCH /api/cards/1` with `{"column_id": 1}`, which is card 1's own column. Backlog went from `[1, 2]` to `[2, 1]`. `backend/AGENTS.md:48` documents "Moving with only `column_id` puts it last". It does not say this also applies within the same column.
-- **Effect:** the frontend always sends a position, so only the AI can trigger it, for example "move card 1 to Backlog" when it is already there.
-- **Action:** my lean is to treat it as no change when the column is the same and no position is given. Otherwise, document it in `backend/AGENTS.md`.
+**Fix:** `backend/app/board.py` change functions return `True` or `False`. A function that would write nothing returns before `_changed`. `backend/app/chat.py` puts no-op actions in `skipped` with reason `No change`, and `applied` echoes only the fields the action used. `docs/DATABASE.md` now says the version counts changes, not content.
 
-### L3. Sign-out does not end the session on the server
+**Verified by:** new `test_board.py` and `test_chat.py` cases for the empty PATCH, same-title rename and no-op AI actions.
 
-- **Where:** `backend/app/main.py:23-28`, `backend/app/api/auth.py:31-34`
-- **Evidence:** a probe saved the cookie, signed out, and sent the old cookie again. `/api/me` returned 200. The cookie is `Max-Age=1209600` (14 days), httpOnly, `SameSite=Lax`, and has no `Secure` flag. `backend/AGENTS.md:57` already says "The server stores nothing".
-- **Effect:** someone who copies the cookie can keep using it after sign-out. For one user on localhost over plain HTTP, this is acceptable.
-- **Action:** none in code for the MVP. Before the app runs anywhere other than localhost, store sessions server-side or shorten `max_age`, and set `https_only=True`.
+### M4. A later successful save hid an earlier failed save
 
-### L4. Dependencies
+If save B failed while save A was still in flight, A's success called `setError(null)` and removed B's failure message.
 
-- `npm audit --omit=dev`: 1 moderate, `next` 16.4.3. Its 7 advisories cover caching (`use cache`, Cache Components), image optimization, Edge runtime routes and self-hosted servers that forward fetched responses. The app is a static export and uses none of these. The fix is 16.4.6, a patch release.
-- Full `npm audit`: 8 moderate. One is `next`, and the other 7 are the `minimatch` chain under `typescript-eslint`, accepted in the previous review. No high or critical.
-- Python: `fastapi` 0.162.0 (latest 0.165.0), `openai` 3.42.1 (latest 3.57.0), `httpx2` 2.16.0 (latest 2.16.2). I could not run a Python vulnerability audit (see "Not checked").
-- **Action:** set `next` and `eslint-config-next` to 16.4.6. Run `uv lock --upgrade` in `backend/`. Rerun all tests. `AGENTS.md` asks for the latest versions.
+**Fix:** `frontend/src/components/KanbanBoard.tsx` gives each save an id and a set of pending ids. A failure marks every save already in flight as blocked. A blocked save cannot clear the message; a save started after the failure can.
 
-### L5. Generated files are tracked or linted (open from the previous review)
+**Verified by:** two new `KanbanBoard.test.tsx` cases cover both orderings.
 
-- `frontend/test-results/.last-run.json` is committed, and neither `.gitignore` covers `test-results/`.
-- `eslint.config.mjs` does not ignore `coverage/`, so lint scans the coverage report after a coverage run.
-- `vitest.config.ts` has no `coverage.include`, so config files count toward coverage at 0%.
-- **Action:** add `/test-results/` to `frontend/.gitignore` and run `git rm --cached frontend/test-results/.last-run.json`. Add `"coverage/**"` to `globalIgnores`. Add `include: ["src/**/*.{ts,tsx}"]` under `coverage`.
+## Low findings
 
-### L6. Each card is a button with buttons inside it
+### L1. A same-version reply could replace an optimistic board
 
-- **Where:** `frontend/src/components/KanbanCard.tsx:50-66`
-- **Evidence (from code):** `useSortable` gives the `article` `role="button"`. Inside it are the edit buttons, the edit fields and Remove. `frontend/AGENTS.md` describes the same structure: "A card is a button named after its title. Inside it: `Edit <title>` ... `Delete <title>`". The axe-core accessibility checker flags this pattern with its `nested-interactive` rule.
-- **Action:** next time accessibility gets attention, move drag activation to a small handle button and drop the role from the `article`. The keyboard tests in `kanban.spec.ts` will catch regressions.
+`shownVersion` only changed in `show`, so an optimistic board left it behind and a reply at that version was accepted. A chat reply built before a pending delete could bring the card back.
 
-### L7. No drop preview between columns (open from the previous review)
+**Fix:** `show` also drops a reply at the current version while any save is pending.
 
-There is still no `onDragOver` handler. A card dragged to another column shows no gap until it is dropped. The only way to drop at the bottom of a non-empty column is the empty space below its last card. Revisit if users find it awkward.
+**Verified by:** a new `KanbanBoard.test.tsx` case with a pending delete and a v0 chat reply.
 
-### L8. A non-ASCII username or password caused a 500 (found later, fixed)
+### L2. Rapid changes computed the next board from a stale render
 
-- **Where:** `backend/app/auth.py` (at the time: `backend/app/auth.py:48-49`, in the login route)
-- **Evidence:** found while moving the sign-in check during the backend refactor. Before the change, a test client sent `usér` and `用户` as usernames with a wrong password, and each got 500 instead of 401. `secrets.compare_digest` raises `TypeError` for non-ASCII strings.
-- **Effect:** no data or security impact. From code, not tried in the browser: the sign-in form shows "Could not reach the server. Try again." for any status other than 401, so someone who typed an accented character saw that instead of "Invalid username or password."
-- **Fixed, 2026-11-21:** compare UTF-8 bytes, which `compare_digest` accepts. See "Fix log".
+Handlers used the `board` value from their render, so two edits before the next render each started from the same board.
+
+**Fix:** `KanbanBoard.tsx` holds the latest board in `boardRef`. Handlers pass a builder to `save`, which builds both the optimistic board and the API payload from that ref. No API call runs inside a React state updater.
+
+**Verified by:** a new `KanbanBoard.test.tsx` case with two delayed PATCHes.
+
+### L3. Two field errors were shown as an AI failure
+
+A failed message plus text typed while waiting could exceed the backend's 2,000-character limit and get a 422, which the UI showed as an AI failure.
+
+**Fix:** `ChatSidebar.tsx` truncates the restored draft to 2,000 code points.
+
+**Verified by:** a new `ChatSidebar.test.tsx` case sends exactly 2,000 code points on retry.
+
+### L4. History truncation split UTF-16 units
+
+`slice(0, 4000)` cut between surrogate pairs. Pydantic counts code points.
+
+**Fix:** the sidebar uses `Array.from(text).slice(0, 4000).join("")`.
+
+**Verified by:** a new `ChatSidebar.test.tsx` case keeps an emoji whole at the cut.
+
+### L5. A card was a button containing buttons and fields
+
+dnd-kit gave the card `role="button"` while the card held Edit, Remove and input elements.
+
+**Fix:** the card is an `article`; a separate button holds the activator ref, listeners and dnd-kit attributes. Dragging starts from that handle. Do not use dnd-kit's `disabled` option, which sets `aria-disabled` on the whole card.
+
+**Verified by:** a new `KanbanBoard.test.tsx` case checks that no button contains another button, input or textarea. Browser drag tests use the handle.
+
+### L6. Columns had no accessible name
+
+The `section` had only a `data-testid`.
+
+**Fix:** `KanbanColumn.tsx` sets `aria-label={column.title}`.
+
+**Verified by:** a new `KanbanColumn.test.tsx` case finds the named region.
+
+### L7. Sign out waited on a request with no timeout or feedback
+
+A hanging logout request kept the user on the board. A 401 from the board load also kept the loading text on screen.
+
+**Fix:** `page.tsx` calls `setSession` first, then sends logout in the background. The board's 401 path already called `onSignOut`.
+
+**Verified by:** a new `page.test.tsx` case with a logout promise that never resolves.
+
+### L8. AI actions carried fields their type ignores
+
+A `move` with a stray `title` was reported as applied without renaming anything.
+
+**Fix:** `chat.py` has one field list per action type. `applied` copies the action with unused fields set to null.
+
+**Verified by:** a new `test_chat.py` case checks the reported shape.
+
+### L9. Dropping the last card on its own column sent a no-op PATCH
+
+The same-column branch always returned a new array, so the caller's identity check did not catch it.
+
+**Fix:** `frontend/src/lib/kanban.ts` returns the same array when the card is already last in that column. The caller skips the save.
+
+**Verified by:** a new `kanban.test.ts` case.
+
+### L10. There was no drop preview between columns
+
+**Fix:** `KanbanBoard.tsx` handles `onDragOver`, resolves the column from the hovered id and passes `preview` to `KanbanColumn`. The column shows the existing yellow ring.
+
+**Verified by:** a new `KanbanColumn.test.tsx` case checks `data-preview` on the hovered column. This is a ring, not a gap in the card list.
+
+### L11. History had no exact-boundary test
+
+**Fix:** `ChatSidebar.test.tsx` now tests 20 messages at exactly 4,000 characters and a 4,001st character being cut.
+
+**Verified by:** three new cases cover the emoji boundary, 20 messages at the limit and the first cut character. Backend limits were already tested.
+
+### L12. A same-column move with only `column_id` sent the card to the bottom
+
+`PATCH /api/cards/1` with `{"column_id": 1}` reordered the card and raised the version. The docs did not say this happened in the card's own column.
+
+**Fix:** `update_card` treats `column_id` alone as a move only when it names another column. A `position` still moves the card within its column. `backend/AGENTS.md` says this.
+
+**Verified by:** a new `test_board.py` case and the route docs.
+
+### L13. A lone surrogate in credentials returned 500
+
+`username.encode()` used strict UTF-8.
+
+**Fix:** `auth.py` encodes with `surrogatepass`; `api/auth.py` replaces surrogates before Pydantic validation so its error body can be encoded. Both return 401 for a bad credential.
+
+**Verified by:** `test_auth.py` cases send raw JSON with a lone surrogate in each field.
+
+### L14. A copied session cookie worked after sign-out
+
+Logout cleared the cookie but did not revoke the session.
+
+**Fix:** `backend/app/sessions.py` holds random session ids in memory. Login creates one, every signed-in route checks it and logout revokes it. A copied cookie gets 401. A restart signs everyone out, even with `PM_SESSION_SECRET` set. This is recorded in `backend/AGENTS.md`.
+
+**Verified by:** `test_auth.py` cases for a copied cookie after logout and a tampered cookie.
+
+### L15. The `/api` catch-all missed three cases
+
+`HEAD` and `OPTIONS` were not declared, and bare `/api` fell through to the frontend's HTML 404 page.
+
+**Fix:** `backend/app/api/__init__.py` registers both `""` and `/{path:path}` for all seven methods, after the real routers.
+
+**Verified by:** `test_main.py` parametrizes all seven methods over both paths.
+
+### L16. AI output size and action count were not capped
+
+**Fix:** `chat.py` rejects a reply over 4,000 characters or more than 20 actions as unreadable output. Nothing is applied and the route returns 502.
+
+**Verified by:** new `test_chat.py` cases at both limits.
+
+### L17. AI actions were built from a board snapshot that could go stale
+
+The board is read, the AI answers outside the transaction, then actions are applied against the current board. Ids are checked again, but positions and titles are not.
+
+**Fix:** accepted behavior, now documented in the `respond` docstring and `backend/AGENTS.md`. Avoiding a 30-second write lock is deliberate.
+
+**Verified by:** a new `test_chat.py` case mutates the board while the AI answers and checks that ids are rechecked but a stale position is applied to the current board. The behavior is documented in `chat.py` and `backend/AGENTS.md`.
+
+### L18. Two startup and input limits were unguarded
+
+`db.init()` read `user_version` outside the transaction; login fields had no length limit.
+
+**Fix:** `db.py` runs the schema steps under the transaction. `api/auth.py` limits each credential to 200 characters.
+
+**Verified by:** `test_db.py` has a parallel `init` case on a fresh file; `test_auth.py` checks 200 characters is accepted and rejects longer input.
+
+### L19. The schema test did not check constraints
+
+**Fix:** `test_db.py` compares `docs/schema.json` against `PRAGMA foreign_key_list`, `index_list`, `table_info` defaults and `STRICT`, as well as `user_version`.
+
+**Verified by:** the expanded `test_db.py`.
+
+### L20. Dependencies were behind the latest
+
+**Fix:** `next` and `eslint-config-next` are pinned at 16.4.6. `uv lock --upgrade` moved `fastapi` to 0.165.0, `openai` to 3.57.0, `pydantic` to 2.14.4, `httpx2` and `httpcore2` to 2.16.2, with transitives. `frontend/AGENTS.md` names the new Next.js version. OpenRouter and the app work on the new `openai` version; no rollback was needed.
+
+**Verified by:** the full suites after the upgrade. `npm audit` moderate advisories went from 8 to 7; the remaining ones are in the `minimatch` chain under `typescript-eslint`.
+
+### L21. The Windows scripts had untested failure paths
+
+**Fix:** both PowerShell scripts use `$ErrorActionPreference = "Continue"` so Docker progress on stderr is not a terminating error on Windows PowerShell 5.1. They check `$LASTEXITCODE` after the container lookup and `docker rm -f`.
+
+**Verified by:** code review. The scripts have still not been run; there is no Windows host here.
+
+### L22. The bash health wait could hang and left a failed container behind
+
+**Fix:** `start-mac.sh` and `start-linux.sh` use `curl -sf --max-time 2`, and remove the container on the failure path. The two files are byte-identical for Mac and Linux.
+
+**Verified by:** `bash -n` on all four shell scripts and byte comparison.
+
+### L23. Ignore patterns left gaps for nested env files
+
+**Fix:** `.dockerignore` and `.gitignore` use `**/.env*`.
+
+**Verified by:** code review. Still not confirmed with a nested `.env` build.
+
+### L24. Generated Playwright output was tracked
+
+**Fix:** `frontend/.gitignore` has `/test-results/`, and `git rm --cached` removed `frontend/test-results/.last-run.json` from the index. `eslint.config.mjs` ignores `coverage/**` and `vitest.config.ts` limits coverage to `src/`.
+
+**Verified by:** `git ls-files` and the ignored-file check. The staged deletion is in the working tree.
+
+### L25. Image dependencies used mutable tags
+
+**Fix:** `Dockerfile` pins `node:24-slim`, `python:3.14-slim` and `ghcr.io/astral-sh/uv:0.13.6` by digest.
+
+**Verified by:** `docker buildx imagetools inspect` resolved all three digests. The browser suite rebuilt the image from the pinned Dockerfile.
+
+### L26. Two docs described the project before the build
+
+**Fix:** root `AGENTS.md` now describes the static-export build. `CLAUDE.md` matches `docs/PLAN.md` on the unrun Windows scripts.
+
+**Verified by:** read all three files.
+
+### L27. Several tests asserted implementation details
+
+The keyboard helper matched dnd-kit's exact announcement text and checked `aria-pressed` after the arrow key. `aria-pressed` stays true for the whole drag, so it never waited for the new drop target. Both keyboard e2e tests failed because the drop used the old target. The other brittle assertions were an `/^Edit (?!details)/` locator, a fixed drop offset and exact Tailwind class strings.
+
+**Fix:** cards are found by role and title, titles by `data-testid="card-title"`, and drags use the card the test targets as the drop point. Tailwind assertions check labels and order. The keyboard helper records dnd-kit's live region text after pick-up and waits for it to change after the arrow key. That is a stable sync point with no wording or id match.
+
+**Verified by:** all 18 browser tests pass, including both keyboard tests, with the live AI key.
 
 ## In good shape
 
-- **Board changes:** every change goes through `board.py` inside one `BEGIN IMMEDIATE` transaction. Ids are checked before any write. The chat applies several actions in one transaction and skips bad ones. Tests cover ownership (`test_board.py:254`, `test_chat.py:279`) and parallel requests (`test_board.py:280`).
-- **AI failure handling:** every OpenRouter failure becomes a 502, and a missing key becomes a 503. Bad model output cannot cause a 500. The AI call runs outside the transaction (`test_chat.py:303`).
-- **Static serving:** `StaticFiles(html=True)` with a traversal test (`test_main.py:42`).
-- **Cross-site requests:** a probe sent a `text/plain` POST, the type a plain HTML form can send, and got 422. With `SameSite=Lax`, a form on another site cannot make changes.
-- **Docker:** runs as a non-root user, binds to `127.0.0.1`, keeps data in the `pm-data` volume, and has a health check. `.env` is excluded from the build.
-- **Docs:** `backend/AGENTS.md`, `frontend/AGENTS.md`, `scripts/AGENTS.md` and `docs/DATABASE.md` match the code. The only gap is the same-column case in L2. The code comment quoted in M1 was wrong at review time and has since been corrected. Input limits match on both sides: titles 200, details 2,000, message 2,000, history 20 of 4,000.
-
-## Previous review status
-
-| Item | Status | Evidence |
-|---|---|---|
-| M1 to M4, L1, L5 | Fixed before this review | See git history of this file |
-| L2 generated files | Open | L5 here |
-| L3 empty column title | Fixed | `KanbanColumn.tsx:51-58`, test "does not save an empty column title" |
-| L4 drop position | Open | L7 here |
-
-Rebuild checklist from the review of `5facb0a`:
-
-| Item | Status | Evidence |
-|---|---|---|
-| Node 22+ build image | Done | `Dockerfile:3` (`node:24-slim`) |
-| Bind to `127.0.0.1`, data volume | Done | `scripts/start-mac.sh:13-14` |
-| No files served from outside the web folder | Done | `main.py:35-39`, `test_main.py:42` |
-| `check_same_thread=False`, parallel test | Done | `db.py:44`, `test_board.py:280` |
-| Same-column move removes the card first | Done | `board.py:202-206`, `test_board.py:149` |
-| One module for board changes | Done | `board.py`, used by `chat.py` and `api/board.py` |
-| Database fixture per test | Done | `conftest.py:18-23` |
-| Refresh in background, loading screen only once | Done | `KanbanBoard.tsx:90-96` |
-| Column rename on blur or Enter, skip empty | Done | `KanbanColumn.tsx:51-60` |
-| Catch `ValidationError`, return applied actions only | Mostly done | `chat.py:100-102`. L1 is the remaining gap |
-| Board sent once, history capped | Done | `chat.py:85`, `api/chat.py:14`, `test_chat.py:77` |
-| Chat label color by role | Done | `ChatSidebar.tsx:117-122` |
-
-The checklist also asked to accept or strip `card-` and `col-` id prefixes. Ids are integers in the AI's output schema, so a prefixed id cannot reach the code.
+- **Board changes:** every write goes through `board.py` inside one `BEGIN IMMEDIATE` transaction. Ids are checked before any write. The chat applies several actions in one transaction and skips bad ones.
+- **AI failure handling:** non-2xx replies, timeouts, connection failures, malformed output, oversized output and a missing key all become 502 or 503. The AI call runs outside the transaction.
+- **Ownership:** the signed-in user cannot touch another user's columns or cards through any route or action. Tests cover both paths.
+- **Concurrency:** `check_same_thread=False`, `BEGIN IMMEDIATE`, serialized schema setup and per-test temporary databases are in place. Parallel creates and parallel `init` are tested.
+- **Static serving:** `StaticFiles(html=True)` with a traversal test.
+- **Docker:** runs as a non-root user, binds to `127.0.0.1:8000`, keeps data in the `pm-data` volume, has a health check, and excludes root and nested `.env` files from the image.
+- **Docs:** `backend/AGENTS.md`, `frontend/AGENTS.md`, `scripts/AGENTS.md` and `docs/DATABASE.md` match the code. Input limits agree on both sides: titles 200, details 2,000, message 2,000, history 20 of 4,000.
 
 ## What I checked
 
 | Check | Result |
 |---|---|
-| Read every tracked source, test, config, script and doc file, except lock files | Done |
-| `uv run --env-file ../.env pytest` | 110 passed, 0 skipped |
+| Read every changed source, test, config, script and doc file, except lock files | Done |
+| `uv run --env-file ../.env pytest -q` | 149 passed, live AI included |
 | `npm run lint` | Clean |
 | `npx tsc --noEmit` | 0 errors |
-| `npm run test:unit` | 49 passed |
-| `npm run test:e2e` with the key | 18 passed |
-| Start script, smoke test of `/`, login, `/api/me`, `/api/board`, stop script | All 200. No containers left, `pm-data` kept |
-| `npm audit`, `npm outdated`, `uv tree --outdated` | See L4 |
-| Backend probes (scratchpad, not in repo) | Confirmed L1, L2, L3 and the cross-site result |
-| Frontend race probe (temporary file, deleted) | Confirmed M1 |
-
-Findings marked "from code" were read, not reproduced.
+| `npm run test:unit` | 64 passed in 7 files |
+| `npm run test:e2e` with the live AI key | 18 passed in a rebuilt container |
+| `git diff --check` | Clean |
+| `bash -n scripts/*.sh` | All four pass |
+| `docker buildx imagetools inspect` on all three base images | Digests resolve |
+| Reconciled the 31 findings against the diff and test names | All fixed |
+| `pm-app` on port 8000 | Untouched; e2e uses `pm-app-e2e` on 8001 |
 
 ## Not checked
 
-- Python vulnerability audit. The `pip-audit` run was blocked by a permission check in this session.
-- The Windows scripts. They have never been run, as `scripts/AGENTS.md` says.
+- Python vulnerability audit. `pip-audit` was not run.
+- The Windows scripts. There is no Windows host here, so the fixes are from code only.
 - How the app looks in a real browser. Only the Playwright tests drove it.
-- The quality of the AI's answers beyond the single live test.
+- The quality of the AI's answers beyond the live tests.
+- Whether a nested `.env` is excluded by the current `.dockerignore` patterns. This follows Docker's documented matching rules; no build test used a nested `.env`.
+- No commit or push. All changes are in the working tree.

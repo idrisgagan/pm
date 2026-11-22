@@ -54,9 +54,12 @@ export const openFreshBoard = async (page: Page) => {
 export const column = (page: Page, index: number) =>
   page.locator('[data-testid^="column-"]').nth(index);
 
-// A card is a dnd-kit button labelled with its title.
+// A card is an article named after its title. Only its handle starts a drag.
 export const card = (scope: Page | Locator, title: string) =>
-  scope.getByRole("button", { name: title, exact: true });
+  scope.getByRole("article", { name: title, exact: true });
+
+export const dragHandle = (scope: Page | Locator, title: string) =>
+  scope.getByRole("button", { name: `Drag ${title}`, exact: true });
 
 export const cardTitles = (scope: Locator) =>
-  scope.locator("article").getByRole("button", { name: /^Edit (?!details)/ });
+  scope.locator("article").locator('[data-testid="card-title"]');

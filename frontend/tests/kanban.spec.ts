@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { SEED, card, cardTitles, column, openFreshBoard } from "./helpers";
+import { SEED, card, cardTitles, column, dragHandle, openFreshBoard } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await openFreshBoard(page);
@@ -58,15 +58,17 @@ test("renames a column and keeps the name after a reload", async ({ page }) => {
 });
 
 test("moves a card between columns and keeps it there after a reload", async ({ page }) => {
-  const cardBox = await card(page, "Align roadmap themes").boundingBox();
-  const columnBox = await column(page, 3).boundingBox();
-  if (!cardBox || !columnBox) {
+  const handleBox = await dragHandle(page, "Align roadmap themes").boundingBox();
+  const targetBox = await card(page, "QA micro-interactions").boundingBox();
+  if (!handleBox || !targetBox) {
     throw new Error("Unable to resolve drag coordinates.");
   }
 
-  await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + cardBox.height / 2);
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(columnBox.x + columnBox.width / 2, columnBox.y + 120, { steps: 12 });
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+    steps: 12,
+  });
   await page.mouse.up();
   await expect(card(column(page, 3), "Align roadmap themes")).toBeVisible();
 
@@ -75,27 +77,30 @@ test("moves a card between columns and keeps it there after a reload", async ({ 
   await expect(cardTitles(column(page, 0))).toHaveText(["Gather customer signals"]);
 });
 
-const keyboardMove = async (page: Page, title: string, key: string, overTitle: string) => {
-  const moving = card(page, title);
-  const overId = await card(page, overTitle).getAttribute("data-testid");
-  await moving.focus();
+const keyboardMove = async (page: Page, title: string, key: string) => {
+  const handle = dragHandle(page, title);
+  await handle.focus();
   await page.keyboard.press("Space");
-  await expect(moving).toHaveAttribute("aria-pressed", "true");
+  await expect(handle).toHaveAttribute("aria-pressed", "true");
   // dnd-kit's KeyboardSensor adds its arrow-key listener in a setTimeout after
   // pick-up. Waiting one task in the page lets that timer run first.
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  // The move is applied on drop. dnd-kit's live region changes when it accepts
+  // a new drop target, so wait for that instead of matching its wording.
+  const announced = page.getByRole("status");
+  const before = await announced.textContent();
   await page.keyboard.press(key);
-  await expect(page.getByText(`was moved over droppable area ${overId}`)).toBeAttached();
+  await expect.poll(() => announced.textContent()).not.toBe(before);
   await page.keyboard.press("Space");
 };
 
-test("links cards to the keyboard instructions", async ({ page }) => {
-  const describedBy = await card(page, "Align roadmap themes").getAttribute("aria-describedby");
+test("links drag handles to the keyboard instructions", async ({ page }) => {
+  const describedBy = await dragHandle(page, "Align roadmap themes").getAttribute("aria-describedby");
   await expect(page.locator(`[id="${describedBy}"]`)).toContainText("press the space bar");
 });
 
 test("reorders a card with the keyboard and keeps the order after a reload", async ({ page }) => {
-  await keyboardMove(page, "Gather customer signals", "ArrowUp", "Align roadmap themes");
+  await keyboardMove(page, "Gather customer signals", "ArrowUp");
   const reordered = ["Gather customer signals", "Align roadmap themes"];
   await expect(cardTitles(column(page, 0))).toHaveText(reordered);
 
@@ -104,7 +109,7 @@ test("reorders a card with the keyboard and keeps the order after a reload", asy
 });
 
 test("moves a card to another column with the keyboard", async ({ page }) => {
-  await keyboardMove(page, "Align roadmap themes", "ArrowRight", "Prototype analytics view");
+  await keyboardMove(page, "Align roadmap themes", "ArrowRight");
   await expect(card(column(page, 1), "Align roadmap themes")).toBeVisible();
 
   await page.reload();

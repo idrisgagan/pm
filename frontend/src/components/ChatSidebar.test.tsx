@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import type { ApiBoard, ChatAction, ChatReply } from "@/lib/api";
@@ -45,6 +45,14 @@ const renderSidebar = () => {
 };
 
 const log = () => within(screen.getByRole("log"));
+
+// Sets the whole box at once, so long test messages do not need thousands of
+// key events.
+const ask = async (box: HTMLElement, text: string) => {
+  fireEvent.change(box, { target: { value: text } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await vi.waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+};
 
 describe("ChatSidebar", () => {
   afterEach(() => {
@@ -98,6 +106,63 @@ describe("ChatSidebar", () => {
     expect(history).toHaveLength(20);
     expect(history[0]).toEqual({ role: "user", content: "Message 2" });
     expect(history[19].content).toHaveLength(4000);
+  });
+
+  it("keeps an emoji whole when history is cut at 4,000 characters", async () => {
+    const long = "x".repeat(3999) + "😀";
+    const fetchMock = mockChat(reply(long), reply("Done."));
+    const { box } = renderSidebar();
+
+    await ask(box, "First");
+    await ask(box, "Second");
+
+    const content = sentBodies(fetchMock)[1].history[1].content;
+    expect(Array.from(content)).toHaveLength(4000);
+    expect(content.endsWith("😀")).toBe(true);
+  });
+
+  it("keeps all 20 history messages when each is at the 4,000 character limit", async () => {
+    const long = "y".repeat(4000);
+    const fetchMock = mockChat(...Array.from({ length: 12 }, () => reply(long)));
+    const { box } = renderSidebar();
+
+    for (let i = 1; i <= 12; i++) {
+      await ask(box, `Message ${i}`);
+    }
+
+    const { history } = sentBodies(fetchMock)[11];
+    expect(history).toHaveLength(20);
+    expect(history[0]).toEqual({ role: "user", content: "Message 2" });
+    expect(history[19]).toEqual({ role: "assistant", content: long });
+  });
+
+  it("cuts a 4,001 character history message to 4,000", async () => {
+    const long = "z".repeat(4001);
+    const fetchMock = mockChat(reply(long), reply("Done."));
+    const { box } = renderSidebar();
+
+    await ask(box, "First");
+    await ask(box, "Second");
+
+    expect(sentBodies(fetchMock)[1].history[1]).toEqual({
+      role: "assistant",
+      content: "z".repeat(4000),
+    });
+  });
+
+  it("caps the draft restored after a failure so the retry fits the message limit", async () => {
+    const fetchMock = mockChat(502, reply("Added it."));
+    const { box } = renderSidebar();
+
+    fireEvent.change(box, { target: { value: "a".repeat(2000) } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.change(box, { target: { value: "b".repeat(2000) } });
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await log().findByText("Added it.")).toBeInTheDocument();
+    expect(sentBodies(fetchMock)).toHaveLength(2);
+    expect(Array.from(sentBodies(fetchMock)[1].message)).toHaveLength(2000);
   });
 
   it("adds a new line on Shift+Enter instead of sending", async () => {
@@ -238,7 +303,9 @@ describe("ChatSidebar", () => {
     await userEvent.type(box, "Hello{Enter}");
     await log().findByText("Hi there.");
 
-    expect(log().getByText("You")).toHaveClass("text-[var(--accent-yellow)]");
-    expect(log().getByText("AI")).toHaveClass("text-[var(--secondary-purple)]");
+    expect(log().getAllByText(/^(You|AI)$/).map((label) => label.textContent)).toEqual([
+      "You",
+      "AI",
+    ]);
   });
 });

@@ -8,6 +8,8 @@ import pytest
 from conftest import completion
 from fastapi.testclient import TestClient
 
+from app import ai
+
 UNREADABLE = {"detail": "The AI service gave an answer the app could not read."}
 
 
@@ -120,3 +122,20 @@ def test_output_cut_off_by_length_becomes_502(signed_in_client: TestClient, fake
 
     assert response.status_code == 502
     assert response.json() == UNREADABLE
+
+
+@pytest.mark.parametrize("choices", [pytest.param([], id="empty"), pytest.param(None, id="missing")])
+def test_reply_without_choices_becomes_502(
+    signed_in_client: TestClient, fake_openrouter, choices: list | None
+) -> None:
+    body = {"id": "gen-1", "object": "chat.completion", "created": 0, "model": ai.MODEL}
+    if choices is not None:
+        body["choices"] = choices
+    fake_openrouter(lambda request: httpx2.Response(200, json=body))
+    before = signed_in_client.get("/api/board").json()
+
+    response = send(signed_in_client)
+
+    assert response.status_code == 502
+    assert response.json() == UNREADABLE
+    assert signed_in_client.get("/api/board").json() == before

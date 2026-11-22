@@ -67,9 +67,11 @@ def init() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = connect()
     try:
-        version = conn.execute("PRAGMA user_version").fetchone()[0]
-        for number, statements in enumerate(MIGRATIONS[version:], start=version + 1):
-            with transaction(conn):
+        # One lock for the read and every step, so two processes starting on a
+        # fresh file cannot both run step 1.
+        with transaction(conn):
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            for number, statements in enumerate(MIGRATIONS[version:], start=version + 1):
                 for statement in statements:
                     conn.execute(statement)
                 conn.execute(f"PRAGMA user_version = {number}")

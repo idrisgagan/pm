@@ -2,9 +2,14 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import clsx from "clsx";
 import { ApiError, chat, type ApiBoard, type ChatAction, type ChatReply } from "@/lib/api";
 
-// The backend accepts at most 20 history messages of up to 4,000 characters.
+// The backend counts Unicode code points, not UTF-16 code units.
+const truncate = (text: string, limit: number) => Array.from(text).slice(0, limit).join("");
+
+// The backend accepts at most 20 history messages of up to 4,000 characters
+// and a message of at most 2,000.
 const HISTORY_LIMIT = 20;
 const HISTORY_CONTENT_LIMIT = 4000;
+const MESSAGE_LIMIT = 2000;
 
 type Entry = { role: "user" | "assistant"; content: string; note?: string };
 
@@ -55,7 +60,7 @@ export const ChatSidebar = ({ onBoard, onSignOut }: ChatSidebarProps) => {
     }
     const history = messages
       .slice(-HISTORY_LIMIT)
-      .map(({ role, content }) => ({ role, content: content.slice(0, HISTORY_CONTENT_LIMIT) }));
+      .map(({ role, content }) => ({ role, content: truncate(content, HISTORY_CONTENT_LIMIT) }));
     const sent = [...messages, { role: "user" as const, content: message }];
     setMessages(sent);
     setDraft("");
@@ -71,9 +76,10 @@ export const ChatSidebar = ({ onBoard, onSignOut }: ChatSidebarProps) => {
         return;
       }
       // Take the message back out and return it to the box, so Enter retries
-      // it. Anything typed while waiting is kept after it.
+      // it. Anything typed while waiting is kept after it. Cap the combined
+      // text so the retry fits the backend's message limit.
       setMessages(messages);
-      setDraft((typed) => (typed ? `${message}\n${typed}` : message));
+      setDraft((typed) => truncate(typed ? `${message}\n${typed}` : message, MESSAGE_LIMIT));
       setError(errorText(error));
     } finally {
       setPending(false);

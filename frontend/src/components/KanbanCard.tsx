@@ -1,4 +1,4 @@
-import { useState, type PointerEvent } from "react";
+import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import clsx from "clsx";
@@ -25,11 +25,6 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
     isDragging,
   } = useSortable({ id: card.id });
 
-  // Keeps the pointer from reaching the card's drag listener, so selecting
-  // text with the mouse stays in the field. Disabling the sortable instead
-  // would mark the whole card aria-disabled.
-  const stopDrag = (event: PointerEvent) => event.stopPropagation();
-
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -45,69 +40,84 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
   };
 
   return (
-    // The card is its own drag handle. Without the activator ref, Space or
-    // Enter on any button inside the card picks the card up instead.
     <article
-      ref={(node) => {
-        setNodeRef(node);
-        setActivatorNodeRef(node);
-      }}
+      ref={setNodeRef}
       style={style}
       className={clsx(
         "rounded-2xl border border-transparent bg-white px-4 py-4 shadow-[0_12px_24px_rgba(3,33,71,0.08)]",
         "transition-all duration-150",
         isDragging && "opacity-60 shadow-[0_18px_32px_rgba(3,33,71,0.16)]"
       )}
-      {...attributes}
-      {...listeners}
       // Without a label, the card's name is every label inside it joined up.
       aria-label={card.title}
       data-testid={card.id}
     >
-      <div className="min-w-0">
-        {editing === "title" ? (
-          <input
-            autoFocus
-            defaultValue={card.title}
-            maxLength={200}
-            aria-label="Card title"
-            onPointerDown={stopDrag}
-            onBlur={(event) => finishEdit("title", event.currentTarget.value)}
-            onKeyDown={(event) => handleEditKeys(event, card.title)}
-            className="w-full rounded-lg border border-[var(--primary-blue)] px-2 py-1 font-display text-base font-semibold text-[var(--navy-dark)] outline-none"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setEditing("title")}
-            aria-label={`Edit ${card.title}`}
-            className="w-full cursor-text text-left font-display text-base font-semibold text-[var(--navy-dark)] wrap-anywhere"
-          >
-            {card.title}
-          </button>
-        )}
-        {editing === "details" ? (
-          <textarea
-            autoFocus
-            defaultValue={card.details}
-            maxLength={2000}
-            rows={3}
-            aria-label="Card details"
-            onPointerDown={stopDrag}
-            onBlur={(event) => finishEdit("details", event.currentTarget.value)}
-            onKeyDown={(event) => handleEditKeys(event, card.details)}
-            className="mt-2 w-full resize-none rounded-lg border border-[var(--primary-blue)] px-2 py-1 text-sm leading-6 text-[var(--gray-text)] outline-none"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setEditing("details")}
-            aria-label={`Edit details of ${card.title}`}
-            className="mt-2 w-full cursor-text whitespace-pre-line text-left text-sm leading-6 text-[var(--gray-text)]"
-          >
-            {card.details || "No details yet."}
-          </button>
-        )}
+      <div className="flex items-start gap-2">
+        {/* Only this handle is draggable. The card itself holds buttons and
+            fields, so it must not be the activator or it becomes a button
+            containing buttons. */}
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label={`Drag ${card.title}`}
+          className="cursor-grab rounded-lg px-1 py-2 text-[var(--gray-text)] active:cursor-grabbing"
+        >
+          <span aria-hidden="true" className="flex flex-col gap-[3px]">
+            <span className="h-[2px] w-3 rounded-full bg-current" />
+            <span className="h-[2px] w-3 rounded-full bg-current" />
+            <span className="h-[2px] w-3 rounded-full bg-current" />
+          </span>
+        </button>
+        <div className="min-w-0 flex-1">
+          {editing === "title" ? (
+            <input
+              autoFocus
+              // Resets the field when a reply or reload changes the saved
+              // title, so a blur cannot write old text over the new title.
+              key={card.title}
+              defaultValue={card.title}
+              maxLength={200}
+              aria-label="Card title"
+              onBlur={(event) => finishEdit("title", event.currentTarget.value)}
+              onKeyDown={(event) => handleEditKeys(event, card.title)}
+              className="w-full rounded-lg border border-[var(--primary-blue)] px-2 py-1 font-display text-base font-semibold text-[var(--navy-dark)] outline-none"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing("title")}
+              aria-label={`Edit ${card.title}`}
+              data-testid="card-title"
+              className="w-full cursor-text text-left font-display text-base font-semibold text-[var(--navy-dark)] wrap-anywhere"
+            >
+              {card.title}
+            </button>
+          )}
+          {editing === "details" ? (
+            <textarea
+              autoFocus
+              key={card.details}
+              defaultValue={card.details}
+              maxLength={2000}
+              rows={3}
+              aria-label="Card details"
+              onBlur={(event) => finishEdit("details", event.currentTarget.value)}
+              onKeyDown={(event) => handleEditKeys(event, card.details)}
+              className="mt-2 w-full resize-none rounded-lg border border-[var(--primary-blue)] px-2 py-1 text-sm leading-6 text-[var(--gray-text)] outline-none"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing("details")}
+              aria-label={`Edit details of ${card.title}`}
+              className="mt-2 w-full cursor-text whitespace-pre-line text-left text-sm leading-6 text-[var(--gray-text)]"
+            >
+              {card.details || "No details yet."}
+            </button>
+          )}
+        </div>
       </div>
       {/* Below the text, not beside the title, so titles get the card's full
           width in narrow columns. */}

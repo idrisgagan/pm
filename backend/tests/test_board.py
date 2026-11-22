@@ -223,6 +223,31 @@ def test_version_goes_up_with_each_change_and_not_on_reads(signed_in_client: Tes
     assert get_board(signed_in_client)["version"] == 5
 
 
+def test_no_op_changes_keep_the_version(signed_in_client: TestClient) -> None:
+    before = get_board(signed_in_client)
+    responses = [
+        signed_in_client.patch("/api/cards/1", json={}),
+        signed_in_client.patch("/api/columns/1", json={"title": "Backlog"}),
+        signed_in_client.patch("/api/columns/1", json={"title": "  Backlog  "}),
+        signed_in_client.patch("/api/cards/1", json={"column_id": before["columns"][0]["id"]}),
+    ]
+    assert all(response.status_code == 200 for response in responses)
+    assert [response.json() for response in responses] == [before] * len(responses)
+    assert get_board(signed_in_client) == before
+
+
+def test_same_column_move_with_only_column_id_is_a_no_op(
+    backlog_abc: dict, signed_in_client: TestClient
+) -> None:
+    before = get_board(signed_in_client)
+    backlog_id = column(backlog_abc, "Backlog")["id"]
+
+    data = move(signed_in_client, card_id(backlog_abc, "A"), column_id=backlog_id)
+
+    assert data == before
+    assert card_titles(data, "Backlog") == ["A", "B", "C"]
+
+
 def test_failed_change_keeps_the_version(signed_in_client: TestClient) -> None:
     signed_in_client.patch("/api/columns/1", json={"title": "Ideas"})
     responses = [

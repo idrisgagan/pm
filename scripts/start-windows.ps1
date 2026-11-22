@@ -1,5 +1,7 @@
 # Build the image and start the app in the background at http://127.0.0.1:8000.
-$ErrorActionPreference = "Stop"
+# Docker writes progress to stderr. With "Stop", Windows PowerShell 5.1 treats
+# that as a terminating error before the $LASTEXITCODE checks below.
+$ErrorActionPreference = "Continue"
 
 $RootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Image = "pm-app"
@@ -10,8 +12,11 @@ $Url = "http://127.0.0.1:8000"
 docker build -t $Image $RootDir
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-if (docker ps -aq --filter "name=^$Container$") {
+$Existing = docker ps -aq --filter "name=^$Container$"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($Existing) {
     docker rm -f $Container | Out-Null
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 $EnvArgs = @()
@@ -37,4 +42,5 @@ for ($i = 0; $i -lt 30; $i++) {
 
 Write-Host "App did not become healthy within 30 seconds. Container logs:"
 docker logs $Container
+if ($LASTEXITCODE -ne 0) { Write-Warning "Could not read container logs." }
 exit 1

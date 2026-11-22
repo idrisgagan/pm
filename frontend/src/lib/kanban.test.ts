@@ -48,4 +48,8 @@ describe("moveCard", () => {
     expect(result[0].cardIds).toEqual(["card-2"]);
     expect(result[1].cardIds).toEqual(["card-3", "card-1"]);
   });
+
+  it("returns the same columns when the last card is dropped on its own column", () => {
+    expect(moveCard(baseColumns, "card-2", "col-a")).toBe(baseColumns);
+  });
 });
